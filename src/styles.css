@@ -37,7 +37,8 @@ button {
 }
 
 input,
-button {
+button,
+textarea {
   font: inherit;
 }
 
@@ -739,3 +740,44 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+.analysis-tester {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 20px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.analysis-tester textarea {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  padding: 14px 16px;
+  color: #eef3ff;
+  background: rgba(4, 8, 15, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+}
+
+.analysis-tester .button {
+  justify-self: start;
+}
+
+.analysis-result,
+.analysis-error {
+  margin: 0;
+  padding: 16px;
+  border-radius: 16px;
+}
+
+.analysis-result p {
+  margin: 8px 0;
+}
+
+.risk-safe { background: rgba(154, 252, 207, 0.1); }
+.risk-caution { background: rgba(244, 229, 142, 0.12); }
+.risk-danger,
+.analysis-error { background: rgba(255, 112, 112, 0.12); }

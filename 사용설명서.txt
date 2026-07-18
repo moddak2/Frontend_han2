@@ -123,3 +123,18 @@ npm run build
 11. 현재 상태 요약
 이 프로젝트는 단순한 정적 페이지가 아니라, 실제 앱처럼 보이는 구조를 가진 프론트엔드 기반입니다.
 지금 단계에서는 디자인과 화면 구조를 먼저 고정했고, 다음 단계에서 백엔드 데이터를 연결하면 바로 확장할 수 있는 상태입니다.
+
+12. 보안 키보드 API 연동 구조
+- API 명세서 v2.0의 /api/v1/health, /analyze, /model/info, /ruleset 계약을 TypeScript 타입으로 정의했습니다.
+- Data Map 화면에서 위험도 분석 요청을 직접 시험할 수 있습니다.
+- 헬스 체크는 1초, 분석 요청은 3초 타임아웃을 적용합니다.
+- 서버 미응답 시 degraded mode로 전환하며 기본 입력 동작을 막지 않습니다.
+- .env.example을 .env.local로 복사하고 서버 주소와 API Key를 설정합니다.
+- VITE_USE_MOCKS=true는 샘플 응답, false는 실제 엣지 서버를 사용합니다.
+
+13. 로컬 DB 연동 원칙
+- 웹 프로토타입은 localStorage 기반 SecurityRepository를 사용합니다.
+- Android 앱에서는 동일 SecurityRepository 계약을 SQLite 구현체로 교체해야 합니다.
+- risk_log, user_settings, guardian_info, block_history 데이터만 저장합니다.
+- 입력 원문은 DB나 로그에 저장하지 않습니다.
+- 보호자는 최대 3명까지만 저장합니다.

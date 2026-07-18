@@ -1,4 +1,7 @@
 import { useMemo, useState } from 'react';
+import { env } from './config/env';
+import { useEdgeHealth } from './hooks/useEdgeHealth';
+import { useRiskAnalysis } from './hooks/useRiskAnalysis';
 
 type MetricTone = 'good' | 'neutral' | 'warning';
 type ViewKey = 'overview' | 'reports' | 'data' | 'activity' | 'settings';
@@ -38,7 +41,7 @@ type Activity = {
 };
 
 type Endpoint = {
-  method: 'GET' | 'POST' | 'PATCH';
+  method: 'GET' | 'POST' | 'PUT';
   path: string;
   description: string;
 };
@@ -136,40 +139,25 @@ const activities: Activity[] = [
 ];
 
 const endpoints: Endpoint[] = [
-  { method: 'GET', path: '/api/profile', description: '사용자 정보와 권한' },
-  { method: 'GET', path: '/api/dashboard/summary', description: '메인 요약 카드' },
-  { method: 'GET', path: '/api/reports', description: '리포트 목록과 필터' },
-  { method: 'GET', path: '/api/activity', description: '최근 작업 내역' },
-  { method: 'PATCH', path: '/api/reports/:id', description: '리포트 상태 업데이트' },
+  { method: 'GET', path: '/api/v1/health', description: '엣지 서버 상태와 degraded mode 판단' },
+  { method: 'POST', path: '/api/v1/analyze', description: '입력 텍스트와 대화 맥락 위험도 분석' },
+  { method: 'GET', path: '/api/v1/model/info', description: 'AI 모델과 룰셋 버전 조회' },
+  { method: 'GET', path: '/api/v1/ruleset', description: '현재 사기 탐지 룰셋 조회' },
+  { method: 'PUT', path: '/api/v1/ruleset', description: '관리자 키로 룰셋 갱신' },
 ];
 
 const apiContract = {
-  userProfile: {
-    id: 'string',
-    name: 'string',
-    role: 'string',
-    team: 'string',
+  analyzeRequest: {
+    request_id: 'UUID v4',
+    client_timestamp: 'ISO 8601 UTC',
+    input_text: { content: '1~2000 chars', field_type: 'message | email | sms | unknown' },
+    options: { analysis_depth: 'quick | full', language: 'ko | en' },
   },
-  dashboardSummary: {
-    title: 'string',
-    value: 'string | number',
-    trend: 'string',
-    updatedAt: 'ISO string',
+  analyzeResponse: {
+    risk_level: 'safe | caution | danger',
+    risk_score: '0.00 ~ 1.00',
+    recommended_action: 'log_only | show_banner | show_popup | block_and_confirm',
   },
-  reportFeed: [
-    {
-      id: 'string',
-      title: 'string',
-      status: 'draft | ready | archived',
-    },
-  ],
-  activityTimeline: [
-    {
-      time: 'string',
-      title: 'string',
-      detail: 'string',
-    },
-  ],
 };
 
 function App() {
@@ -177,7 +165,9 @@ function App() {
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | ReportStatus>('all');
   const [selectedReportId, setSelectedReportId] = useState(reports[0].id);
-  const [syncLevel, setSyncLevel] = useState(72);
+  const [analysisText, setAnalysisText] = useState('');
+  const edgeHealth = useEdgeHealth();
+  const riskAnalysis = useRiskAnalysis();
 
   const filteredReports = useMemo(() => {
     return reports.filter((report) => {
@@ -194,8 +184,15 @@ function App() {
   const selectedReport = reports.find((report) => report.id === selectedReportId) ?? reports[0];
   const visibleActivities = activities.slice(0, activeView === 'activity' ? activities.length : 3);
 
-  const increaseSync = () => {
-    setSyncLevel((current) => (current >= 96 ? 72 : current + 8));
+  const syncLabel = edgeHealth.isLoading ? 'Checking' : edgeHealth.data?.status ?? 'Degraded';
+
+  const requestAnalysis = () => {
+    const content = analysisText.trim();
+    if (!content) return;
+    void riskAnalysis.analyze({
+      input_text: { content, field_type: 'message' },
+      options: { analysis_depth: 'full', language: 'ko', include_warning_message: true },
+    });
   };
 
   return (
@@ -215,8 +212,8 @@ function App() {
         </div>
 
         <div className="topbar-actions">
-          <button type="button" className="button button-primary" onClick={increaseSync}>
-            Sync {syncLevel}%
+          <button type="button" className="button button-primary" onClick={() => void edgeHealth.refresh()}>
+            Server {syncLabel}
           </button>
           <button type="button" className="button button-secondary" onClick={() => setActiveView('reports')}>
             Open Reports
@@ -249,11 +246,12 @@ function App() {
           </nav>
 
           <div className="mini-meter">
-            <span>Sync status</span>
-            <strong>{syncLevel}%</strong>
+            <span>Edge server</span>
+            <strong>{syncLabel}</strong>
             <div className="progress-bar">
-              <div style={{ width: `${syncLevel}%` }} />
+              <div style={{ width: edgeHealth.data?.status === 'ok' ? '100%' : '25%' }} />
             </div>
+            <small>{env.useMocks ? 'Mock mode' : env.apiBaseUrl}</small>
           </div>
         </aside>
 
@@ -459,6 +457,35 @@ function App() {
               </div>
 
               <pre>{JSON.stringify(apiContract, null, 2)}</pre>
+
+              <div className="analysis-tester">
+                <div className="panel-subheader">
+                  <p>Integration test</p>
+                  <strong>위험도 분석 API 테스트</strong>
+                </div>
+                <textarea
+                  value={analysisText}
+                  onChange={(event) => setAnalysisText(event.target.value)}
+                  maxLength={2000}
+                  placeholder="분석할 문장을 입력하세요. 예: 지금 바로 계좌번호를 보내주세요"
+                />
+                <button
+                  type="button"
+                  className="button button-primary"
+                  disabled={!analysisText.trim() || riskAnalysis.isLoading}
+                  onClick={requestAnalysis}
+                >
+                  {riskAnalysis.isLoading ? '분석 중...' : '위험도 분석'}
+                </button>
+                {riskAnalysis.error && <p className="analysis-error">{riskAnalysis.error} 기본 입력은 계속 사용할 수 있습니다.</p>}
+                {riskAnalysis.data && (
+                  <div className={`analysis-result risk-${riskAnalysis.data.risk_level}`}>
+                    <strong>{riskAnalysis.data.risk_level.toUpperCase()} · {Math.round(riskAnalysis.data.risk_score * 100)}%</strong>
+                    <p>{riskAnalysis.data.warning?.message ?? '탐지된 위험이 없습니다.'}</p>
+                    <small>권장 조치: {riskAnalysis.data.recommended_action}</small>
+                  </div>
+                )}
+              </div>
             </section>
           )}
 
