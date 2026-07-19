@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 type MetricTone = 'good' | 'neutral' | 'warning';
 type ViewKey = 'overview' | 'reports' | 'data' | 'activity' | 'settings';
@@ -173,11 +173,20 @@ const apiContract = {
 };
 
 function App() {
+  const [isBooting, setIsBooting] = useState(true);
   const [activeView, setActiveView] = useState<ViewKey>('overview');
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | ReportStatus>('all');
   const [selectedReportId, setSelectedReportId] = useState(reports[0].id);
   const [syncLevel, setSyncLevel] = useState(72);
+
+  useEffect(() => {
+    const bootTimer = window.setTimeout(() => {
+      setIsBooting(false);
+    }, 1200);
+
+    return () => window.clearTimeout(bootTimer);
+  }, []);
 
   const filteredReports = useMemo(() => {
     return reports.filter((report) => {
@@ -197,6 +206,36 @@ function App() {
   const increaseSync = () => {
     setSyncLevel((current) => (current >= 96 ? 72 : current + 8));
   };
+
+  if (isBooting) {
+    return (
+      <div className="app-shell boot-shell">
+        <div className="ambient ambient-one" />
+        <div className="ambient ambient-two" />
+
+        <section className="boot-panel">
+          <div className="boot-badge">Startup sequence</div>
+          <h1>보고서 기반 앱을 준비하는 중</h1>
+          <p>
+            설계도에 맞춰 화면 구조, 데이터 슬롯, 스타일 시스템을 불러오고 있습니다.
+            곧 메인 대시보드로 전환됩니다.
+          </p>
+
+          <div className="boot-meter">
+            <div className="boot-ring" />
+            <div>
+              <strong>Application initializing</strong>
+              <span>Layout, contract slots, and mock data are being loaded.</span>
+            </div>
+          </div>
+
+          <button type="button" className="button button-primary" onClick={() => setIsBooting(false)}>
+            Enter App
+          </button>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell">

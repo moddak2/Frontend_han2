@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'Test-*'
+      - 'TEST-*'
 
 permissions:
   contents: write
@@ -29,11 +29,11 @@ jobs:
         run: npm run build
 
       - name: Package release asset
-        run: zip -r Test-0.0.0.zip dist
+        run: zip -r "${{ github.ref_name }}.zip" dist
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: Test-0.0.0.zip
-          name: Test 0.0.0
+          files: "${{ github.ref_name }}.zip"
+          name: "${{ replace(github.ref_name, '-', ' ') }}"
           generate_release_notes: true
