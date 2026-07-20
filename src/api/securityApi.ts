@@ -1,98 +1,73 @@
-import { env } from '../config/env';
-import type {
-  AnalyzeRequest,
-  AnalyzeResult,
-  ApplyRulesetResult,
-  HealthStatus,
-  ModelInfo,
-  Ruleset,
-} from '../types/securityApi';
-import { apiRequest } from './client';
-import { ApiError } from './client';
-
-const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+import { analyzeLocally } from '../domain/localRiskAnalyzer';
+import { env, type AppConfig } from '../config/env';
+import { defaultRuntime, type RuntimeAdapter } from '../platform/runtime';
+import type { SecurityAnalysisService } from '../services/contracts';
+import type { AnalyzeResult, ApplyRulesetResult, HealthStatus, ModelInfo, Ruleset } from '../types/securityApi';
+import { ApiError, createApiClient } from './client';
 
 const mockHealth: HealthStatus = {
-  status: 'ok', model_loaded: true, uptime_seconds: 86400, server_version: 'mock-1.0.0', queue_depth: 0,
+  status: 'ok',
+  model_loaded: true,
+  uptime_seconds: 86400,
+  server_version: 'mock-1.0.0',
+  queue_depth: 0,
 };
 
-const localAnalyze = (request: AnalyzeRequest, source: 'edge' | 'local_fallback' = 'edge'): AnalyzeResult => {
-  const text = [request.input_text?.content, ...(request.conversation_context?.messages.map((item) => item.content) ?? [])]
-    .filter(Boolean).join(' ');
-  const patterns = [
-    { type: 'resident_registration_number' as const, regex: /\d{6}-[1-4]\d{6}/ },
-    { type: 'card_number' as const, regex: /\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}/ },
-    { type: 'phone_number' as const, regex: /01[0-9]-\d{3,4}-\d{4}/ },
-    { type: 'otp_code' as const, regex: /(?:인증|OTP|코드)[^\d]{0,8}\d{4,8}/i },
-    { type: 'account_number' as const, regex: /(?:계좌|송금)[^\d]{0,8}\d{2,6}[- ]?\d{2,6}[- ]?\d{2,6}/ },
-  ];
-  const detected = patterns.filter(({ regex }) => regex.test(text));
-  const fraudContext = /(검찰|경찰청|금융감독원|지금 당장|즉시|송금|보안 앱|비밀로)/.test(text);
-  const dangerous = detected.some(({ type }) => type !== 'phone_number') || fraudContext;
-  const caution = !dangerous && detected.length > 0;
-  const riskLevel = dangerous ? 'danger' : caution ? 'caution' : 'safe';
+export function createSecurityApi(
+  config: AppConfig = env,
+  runtime: RuntimeAdapter = defaultRuntime,
+): SecurityAnalysisService {
+  const request = createApiClient(config, runtime);
+
   return {
-    risk_level: riskLevel,
-    risk_score: dangerous ? 0.82 : caution ? 0.5 : 0.08,
-    recommended_action: dangerous ? 'block_and_confirm' : caution ? 'show_banner' : 'log_only',
-    detected_personal_info: detected.map(({ type }) => ({
-      type, risk_grade: type === 'phone_number' ? 'caution' : 'danger', confidence: 0.9, span: null,
-    })),
-    detected_fraud_patterns: [],
-    context_analysis: {
-      is_fraud_conversation: dangerous,
-      fraud_category: dangerous ? 'voice_phishing' : null,
-      confidence: dangerous ? 0.9 : 0.95,
-      response_inducement_detected: false,
+    async health() {
+      if (config.useMocks) {
+        await runtime.delay(100);
+        return mockHealth;
+      }
+      return request<HealthStatus>('/health', { timeoutMs: 1000 });
     },
-    warning: dangerous ? {
-      message: '사기 상황일 가능성이 있습니다. 전송하기 전에 다시 확인해 주세요.',
-      tone: 'advisory',
-      display_type: 'block_overlay',
-    } : null,
-    analysis_meta: {
-      analysis_source: source,
-      model_version: source === 'edge' ? 'mock-model' : 'local-regex',
-      ruleset_version: source === 'edge' ? 'mock-rules' : 'local-v1',
-      processing_time_ms: 0,
-      from_cache: false,
+
+    async analyze(payload) {
+      if (config.useMocks) {
+        await runtime.delay(150);
+        return analyzeLocally(payload, 'edge');
+      }
+      const call = () => request<AnalyzeResult>('/analyze', {
+        method: 'POST',
+        body: payload,
+        apiKey: config.apiKey,
+        timeoutMs: 1400,
+        headers: {
+          'X-Request-ID': payload.request_id,
+          'Accept-Language': payload.options?.language ?? 'ko',
+        },
+      });
+      try {
+        return await call();
+      } catch (error) {
+        if (error instanceof ApiError && error.retryable) {
+          try { return await call(); } catch { return analyzeLocally(payload); }
+        }
+        return analyzeLocally(payload);
+      }
+    },
+
+    modelInfo() {
+      return request<ModelInfo>('/model/info', { apiKey: config.apiKey });
+    },
+
+    ruleset() {
+      return request<Ruleset>('/ruleset', { apiKey: config.apiKey });
+    },
+
+    applyRuleset(ruleset: Pick<Ruleset, 'ruleset_version' | 'rules'>) {
+      return request<ApplyRulesetResult>('/ruleset', {
+        method: 'PUT', body: ruleset, apiKey: config.adminApiKey,
+      });
     },
   };
-};
+}
 
-export const securityApi = {
-  async health() {
-    if (env.useMocks) { await wait(150); return mockHealth; }
-    return apiRequest<HealthStatus>('/health', { timeoutMs: 1000 });
-  },
-
-  async analyze(request: AnalyzeRequest) {
-    if (env.useMocks) { await wait(250); return localAnalyze(request); }
-    const call = () => apiRequest<AnalyzeResult>('/analyze', {
-      method: 'POST', body: request, apiKey: env.apiKey, timeoutMs: 1400,
-      headers: { 'X-Request-ID': request.request_id, 'Accept-Language': request.options?.language ?? 'ko' },
-    });
-    try {
-      return await call();
-    } catch (caught) {
-      if (caught instanceof ApiError && caught.retryable) {
-        try { return await call(); } catch { return localAnalyze(request, 'local_fallback'); }
-      }
-      return localAnalyze(request, 'local_fallback');
-    }
-  },
-
-  modelInfo() {
-    return apiRequest<ModelInfo>('/model/info', { apiKey: env.apiKey });
-  },
-
-  ruleset() {
-    return apiRequest<Ruleset>('/ruleset', { apiKey: env.apiKey });
-  },
-
-  applyRuleset(ruleset: Pick<Ruleset, 'ruleset_version' | 'rules'>) {
-    return apiRequest<ApplyRulesetResult>('/ruleset', {
-      method: 'PUT', body: ruleset, apiKey: env.adminApiKey,
-    });
-  },
-};
+// 기존 UI의 import를 깨지 않기 위한 기본 인스턴스
+export const securityApi = createSecurityApi();

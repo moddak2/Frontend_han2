@@ -51,3 +51,12 @@ VITE_USE_MOCKS=false
 - `src/storage`: 웹 프로토타입 저장소. Android에서는 SQLite 구현으로 교체
 
 입력 원문은 저장하지 않고 위험 등급·유형·사용자 조치만 기록합니다.
+
+### 플랫폼 호환 구조
+
+- `createSecurityApi(config, runtime)`: 웹, Electron, 테스트, Android 브리지별 HTTP 실행 환경 주입
+- `createSecurityRepository(storage)`: localStorage, 메모리, Android SQLite 어댑터 교체
+- `createAppServices(config, runtime)`: API와 저장소를 한곳에서 조립
+- `SecurityAnalysisService`: UI가 구현 기술과 무관하게 사용하는 공통 계약
+
+기존 `securityApi`, `browserSecurityRepository`, React 훅 API도 유지하므로 기존 UI 코드를 바로 사용할 수 있습니다. 테스트나 다른 플랫폼에서는 팩토리에 어댑터를 전달하면 됩니다.

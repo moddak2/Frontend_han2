@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { securityApi } from '../api/securityApi';
+import { defaultRuntime, type RuntimeAdapter } from '../platform/runtime';
+import type { SecurityAnalysisService } from '../services/contracts';
 import type { AnalyzeRequest, AnalyzeResult } from '../types/securityApi';
 
-const newRequestId = () => crypto.randomUUID();
-
-export function useRiskAnalysis() {
+export function useRiskAnalysis(
+  service: SecurityAnalysisService = securityApi,
+  runtime: RuntimeAdapter = defaultRuntime,
+) {
   const [data, setData] = useState<AnalyzeResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -14,8 +17,10 @@ export function useRiskAnalysis() {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await securityApi.analyze({
-        ...input, request_id: newRequestId(), client_timestamp: new Date().toISOString(),
+      const result = await service.analyze({
+        ...input,
+        request_id: runtime.createRequestId(),
+        client_timestamp: runtime.now(),
       });
       setData(result);
       setIsDegraded(result.analysis_meta.analysis_source === 'local_fallback');

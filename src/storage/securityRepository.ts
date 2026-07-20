@@ -1,3 +1,4 @@
+import { defaultRuntime, type KeyValueStorage } from '../platform/runtime';
 import type { BlockHistory, GuardianInfo, RiskLog, UserSettings } from '../types/localData';
 
 export interface SecurityRepository {
@@ -12,13 +13,14 @@ export interface SecurityRepository {
 }
 
 const keys = {
+  // 기존 버전 키를 유지해 업데이트 후에도 사용자 데이터가 사라지지 않게 한다.
   riskLogs: 'security-keyboard:risk-logs',
   settings: 'security-keyboard:settings',
   guardians: 'security-keyboard:guardians',
   blockHistory: 'security-keyboard:block-history',
 };
 
-const defaultSettings: UserSettings = {
+export const defaultSettings: UserSettings = {
   font_size: 'standard',
   vibration_enabled: true,
   voice_alert: false,
@@ -26,28 +28,28 @@ const defaultSettings: UserSettings = {
   accessibility_mode: 'standard',
 };
 
-const read = <T>(key: string, fallback: T): T => {
-  const value = localStorage.getItem(key);
-  if (!value) return fallback;
-  try { return JSON.parse(value) as T; } catch { return fallback; }
-};
+export function createSecurityRepository(storage: KeyValueStorage): SecurityRepository {
+  const read = <T>(key: string, fallback: T): T => {
+    const value = storage.getItem(key);
+    if (!value) return fallback;
+    try { return JSON.parse(value) as T; } catch { return fallback; }
+  };
+  const write = (key: string, value: unknown) => storage.setItem(key, JSON.stringify(value));
 
-const write = (key: string, value: unknown) => localStorage.setItem(key, JSON.stringify(value));
+  return {
+    async listRiskLogs() { return read<RiskLog[]>(keys.riskLogs, []); },
+    async saveRiskLog(log) { write(keys.riskLogs, [log, ...read<RiskLog[]>(keys.riskLogs, [])]); },
+    async getSettings() { return read(keys.settings, defaultSettings); },
+    async saveSettings(settings) { write(keys.settings, settings); },
+    async listGuardians() { return read<GuardianInfo[]>(keys.guardians, []); },
+    async saveGuardians(guardians) {
+      if (guardians.length > 3) throw new Error('보호자는 최대 3명까지 등록할 수 있습니다.');
+      write(keys.guardians, guardians);
+    },
+    async listBlockHistory() { return read<BlockHistory[]>(keys.blockHistory, []); },
+    async saveBlockHistory(history) { write(keys.blockHistory, [history, ...read<BlockHistory[]>(keys.blockHistory, [])]); },
+  };
+}
 
-/**
- * 웹 UI 프로토타입용 저장소다. Android 앱에서는 동일 인터페이스의 SQLite 구현체로 교체한다.
- * 보안 정책상 입력 원문을 받거나 저장하는 메서드는 의도적으로 제공하지 않는다.
- */
-export const browserSecurityRepository: SecurityRepository = {
-  async listRiskLogs() { return read<RiskLog[]>(keys.riskLogs, []); },
-  async saveRiskLog(log) { write(keys.riskLogs, [log, ...read<RiskLog[]>(keys.riskLogs, [])]); },
-  async getSettings() { return read(keys.settings, defaultSettings); },
-  async saveSettings(settings) { write(keys.settings, settings); },
-  async listGuardians() { return read<GuardianInfo[]>(keys.guardians, []); },
-  async saveGuardians(guardians) {
-    if (guardians.length > 3) throw new Error('보호자는 최대 3명까지 등록할 수 있습니다.');
-    write(keys.guardians, guardians);
-  },
-  async listBlockHistory() { return read<BlockHistory[]>(keys.blockHistory, []); },
-  async saveBlockHistory(history) { write(keys.blockHistory, [history, ...read<BlockHistory[]>(keys.blockHistory, [])]); },
-};
+// 웹/Electron 기본 구현. Android에서는 KeyValueStorage 어댑터 또는 별도 SQLite Repository를 주입한다.
+export const browserSecurityRepository = createSecurityRepository(defaultRuntime.storage);
