@@ -1,577 +1,157 @@
 import { useMemo, useState } from 'react';
 import { env } from './config/env';
 import { useEdgeHealth } from './hooks/useEdgeHealth';
-import { useRiskAnalysis } from './hooks/useRiskAnalysis';
 
-type MetricTone = 'good' | 'neutral' | 'warning';
-type ViewKey = 'overview' | 'reports' | 'data' | 'activity' | 'settings';
-type ReportStatus = 'draft' | 'ready' | 'archived';
+type StepKey = 'intro' | 'permission' | 'keyboard' | 'settings' | 'dashboard';
 
-type Metric = {
-  label: string;
-  value: string;
-  delta: string;
-  tone: MetricTone;
-};
-
-type WorkflowItem = {
+type Step = {
+  key: StepKey;
+  number: string;
   title: string;
-  status: string;
-  owner: string;
-  progress: number;
-  note: string;
-};
-
-type Report = {
-  id: string;
-  title: string;
-  category: string;
-  status: ReportStatus;
-  owner: string;
-  updatedAt: string;
-  summary: string;
-  tags: string[];
-  completion: number;
-};
-
-type Activity = {
-  time: string;
-  title: string;
-  detail: string;
-};
-
-type Endpoint = {
-  method: 'GET' | 'POST' | 'PUT';
-  path: string;
+  short: string;
   description: string;
 };
 
-const views: Array<{ key: ViewKey; label: string; hint: string }> = [
-  { key: 'overview', label: 'Overview', hint: '요약' },
-  { key: 'reports', label: 'Reports', hint: '목록' },
-  { key: 'data', label: 'Data Map', hint: '연동' },
-  { key: 'activity', label: 'Activity', hint: '로그' },
-  { key: 'settings', label: 'Settings', hint: '설정' },
+const steps: Step[] = [
+  { key: 'intro', number: '01', title: '첫 실행', short: '서비스 소개', description: 'AI가 위험을 감지하고 안전한 입력을 지켜드려요.' },
+  { key: 'permission', number: '02', title: '필수 권한', short: '안전 기능 허용', description: '키보드, 접근성, 알림 권한을 한 번에 확인해요.' },
+  { key: 'keyboard', number: '03', title: '키보드 활성화', short: '기본 입력 설정', description: 'AI 보안 키보드를 기본 입력 방식으로 설정해요.' },
+  { key: 'settings', number: '04', title: '설정 홈', short: '보호 기능 관리', description: '경고, 접근성, 보호자 설정을 쉽게 관리해요.' },
+  { key: 'dashboard', number: '05', title: '보안 대시보드', short: '오늘의 안전 확인', description: '탐지 현황과 최근 활동을 한눈에 확인해요.' },
 ];
 
-const metrics: Metric[] = [
-  { label: '활성 모듈', value: '08', delta: '+2 this sprint', tone: 'good' },
-  { label: '데이터 슬롯', value: '12', delta: 'backend-ready', tone: 'neutral' },
-  { label: '연결 상태', value: '92%', delta: 'mock pipeline', tone: 'warning' },
-];
-
-const workflow: WorkflowItem[] = [
-  {
-    title: '온보딩 대시보드',
-    status: 'Design locked',
-    owner: 'UI Team',
-    progress: 80,
-    note: '첫 진입 시 가장 먼저 보이는 핵심 화면',
-  },
-  {
-    title: '보고서 뷰어',
-    status: 'Mock content',
-    owner: 'Frontend',
-    progress: 65,
-    note: '리스트, 필터, 상세 패널을 포함한 중심 기능',
-  },
-  {
-    title: '실시간 알림',
-    status: 'Backend slot ready',
-    owner: 'API Team',
-    progress: 45,
-    note: '나중에 소켓 또는 폴링으로 교체 가능한 자리',
-  },
-];
-
-const reports: Report[] = [
-  {
-    id: 'RPT-001',
-    title: 'Weekly Operations',
-    category: 'Operations',
-    status: 'ready',
-    owner: 'Han',
-    updatedAt: '10:20',
-    summary: '주간 운영 지표와 승인 상태를 한 번에 확인하는 기본 리포트입니다.',
-    tags: ['핵심', '승인완료', '공유가능'],
-    completion: 94,
-  },
-  {
-    id: 'RPT-002',
-    title: 'Customer Activity',
-    category: 'CRM',
-    status: 'draft',
-    owner: 'Design Team',
-    updatedAt: '09:05',
-    summary: '고객 활동 흐름과 이탈 구간을 추적하는 중간 단계 보고서입니다.',
-    tags: ['분석중', '필터필요'],
-    completion: 68,
-  },
-  {
-    id: 'RPT-003',
-    title: 'Budget Snapshot',
-    category: 'Finance',
-    status: 'ready',
-    owner: 'Finance Ops',
-    updatedAt: 'Yesterday',
-    summary: '예산 집행과 남은 잔액을 시각적으로 보여주는 요약 페이지입니다.',
-    tags: ['요약', '재무'],
-    completion: 86,
-  },
-  {
-    id: 'RPT-004',
-    title: 'Archived Review',
-    category: 'Archive',
-    status: 'archived',
-    owner: 'Admin',
-    updatedAt: 'Mon',
-    summary: '지난 분기 종료 자료를 보관용으로 정리한 리포트입니다.',
-    tags: ['보관', '읽기전용'],
-    completion: 100,
-  },
-];
-
-const activities: Activity[] = [
-  { time: '10:45', title: 'Report approved', detail: 'Weekly Operations 승인 완료' },
-  { time: '10:12', title: 'Backend slot mapped', detail: 'reportFeed 엔드포인트 연결 준비' },
-  { time: '09:40', title: 'UI review passed', detail: '대시보드 카드 레이아웃 확정' },
-  { time: '08:55', title: 'Mock data refreshed', detail: '샘플 데이터와 필터 옵션 업데이트' },
-];
-
-const endpoints: Endpoint[] = [
-  { method: 'GET', path: '/api/v1/health', description: '엣지 서버 상태와 degraded mode 판단' },
-  { method: 'POST', path: '/api/v1/analyze', description: '입력 텍스트와 대화 맥락 위험도 분석' },
-  { method: 'GET', path: '/api/v1/model/info', description: 'AI 모델과 룰셋 버전 조회' },
-  { method: 'GET', path: '/api/v1/ruleset', description: '현재 사기 탐지 룰셋 조회' },
-  { method: 'PUT', path: '/api/v1/ruleset', description: '관리자 키로 룰셋 갱신' },
-];
-
-const apiContract = {
-  analyzeRequest: {
-    request_id: 'UUID v4',
-    client_timestamp: 'ISO 8601 UTC',
-    input_text: { content: '1~2000 chars', field_type: 'message | email | sms | unknown' },
-    options: { analysis_depth: 'quick | full', language: 'ko | en' },
-  },
-  analyzeResponse: {
-    risk_level: 'safe | caution | danger',
-    risk_score: '0.00 ~ 1.00',
-    recommended_action: 'log_only | show_banner | show_popup | block_and_confirm',
-  },
+const Icon = ({ name }: { name: 'shield' | 'keyboard' | 'access' | 'bell' | 'settings' | 'help' | 'user' | 'check' }) => {
+  const paths = {
+    shield: <><path d="M12 3 5 6v5c0 4.6 3 7.5 7 9 4-1.5 7-4.4 7-9V6l-7-3Z"/><path d="m9.3 11.8 1.8 1.8 3.8-4"/></>,
+    keyboard: <><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M19 10h.01M7 14h.01M11 14h6"/></>,
+    access: <><circle cx="12" cy="4.5" r="2"/><path d="M5 8h14M12 7v6m0 0-4 7m4-7 4 7"/></>,
+    bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"/></>,
+    settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></>,
+    help: <><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.3 2.3 0 1 1 3.4 2c-1.2.7-1.2 1.4-1.2 2M12 17h.01"/></>,
+    user: <><circle cx="12" cy="8" r="3"/><path d="M5 20c.7-4 3-6 7-6s6.3 2 7 6"/></>,
+    check: <path d="m5 12 4 4L19 6"/>,
+  };
+  return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 };
 
 function App() {
-  const [activeView, setActiveView] = useState<ViewKey>('overview');
-  const [searchText, setSearchText] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | ReportStatus>('all');
-  const [selectedReportId, setSelectedReportId] = useState(reports[0].id);
-  const [analysisText, setAnalysisText] = useState('');
+  const [activeStep, setActiveStep] = useState(0);
+  const [permissions, setPermissions] = useState([false, false, false]);
+  const [keyboardEnabled, setKeyboardEnabled] = useState(false);
   const edgeHealth = useEdgeHealth();
-  const riskAnalysis = useRiskAnalysis();
+  const current = steps[activeStep];
+  const progress = useMemo(() => ((activeStep + 1) / steps.length) * 100, [activeStep]);
 
-  const filteredReports = useMemo(() => {
-    return reports.filter((report) => {
-      const matchesSearch = [report.title, report.category, report.owner, report.summary]
-        .join(' ')
-        .toLowerCase()
-        .includes(searchText.toLowerCase());
-
-      const matchesStatus = statusFilter === 'all' || report.status === statusFilter;
-      return matchesSearch && matchesStatus;
-    });
-  }, [searchText, statusFilter]);
-
-  const selectedReport = reports.find((report) => report.id === selectedReportId) ?? reports[0];
-  const visibleActivities = activities.slice(0, activeView === 'activity' ? activities.length : 3);
-
-  const syncLabel = edgeHealth.isLoading ? 'Checking' : edgeHealth.data?.status ?? 'Degraded';
-
-  const requestAnalysis = () => {
-    const content = analysisText.trim();
-    if (!content) return;
-    void riskAnalysis.analyze({
-      input_text: { content, field_type: 'message' },
-      options: { analysis_depth: 'full', language: 'ko', include_warning_message: true },
-    });
-  };
+  const goNext = () => setActiveStep((value) => Math.min(value + 1, steps.length - 1));
+  const goBack = () => setActiveStep((value) => Math.max(value - 1, 0));
+  const allowAll = () => setPermissions([true, true, true]);
 
   return (
-    <div className="app-shell">
-      <div className="ambient ambient-one" />
-      <div className="ambient ambient-two" />
-
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">Frontend Han2</p>
-          <h1>앱으로 동작하는 백엔드 준비형 UI</h1>
-          <p className="lead">
-            설계도와 보고서의 흐름을 기준으로 요약, 목록, 데이터 계약, 활동 로그까지
-            연결한 실행형 프론트엔드입니다. 나중에 데이터만 교체하면 바로 붙을 수 있도록
-            구성했습니다.
-          </p>
-        </div>
-
-        <div className="topbar-actions">
-          <button type="button" className="button button-primary" onClick={() => void edgeHealth.refresh()}>
-            Server {syncLabel}
-          </button>
-          <button type="button" className="button button-secondary" onClick={() => setActiveView('reports')}>
-            Open Reports
-          </button>
-        </div>
+    <main className="site-shell">
+      <header className="site-header">
+        <a className="brand" href="#top" aria-label="AI 보안 키보드 홈">
+          <span className="brand-mark"><Icon name="shield" /><span>+</span></span>
+          <span><strong>AI 보안 키보드</strong><small>입력하는 순간부터 안전하게</small></span>
+        </a>
+        <button className="header-status" onClick={() => void edgeHealth.refresh()} title="서버 상태 다시 확인">
+          <span className={`status-dot ${edgeHealth.isDegraded ? 'degraded' : ''}`} />
+          {edgeHealth.isLoading
+            ? '보안 서버 확인 중'
+            : edgeHealth.isDegraded
+              ? '기본 검사 모드 작동 중'
+              : `보안 시스템 정상 작동 중${env.useMocks ? ' (Mock)' : ''}`}
+        </button>
       </header>
 
-      <main className="app-layout">
-        <aside className="side-panel panel">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Navigation</p>
-              <h2>앱 섹션</h2>
-            </div>
-            <span className="status-pill muted">Ready</span>
+      <section className="hero" id="top">
+        <div className="hero-copy">
+          <span className="overline">SECURE INPUT EXPERIENCE</span>
+          <h1>누구나 안심하고<br /><em>입력할 수 있도록</em></h1>
+          <p>AI가 개인정보와 사기 위험을 실시간으로 감지합니다.<br />복잡한 설정 없이, 다섯 단계면 준비가 끝나요.</p>
+          <div className="hero-points">
+            <span><Icon name="check" /> 전송 전 위험 감지</span>
+            <span><Icon name="check" /> 쉬운 접근성 설정</span>
           </div>
+        </div>
 
-          <nav className="nav-list">
-            {views.map((view) => (
-              <button
-                key={view.key}
-                type="button"
-                className={`nav-item ${activeView === view.key ? 'active' : ''}`}
-                onClick={() => setActiveView(view.key)}
-              >
-                <span>{view.label}</span>
-                <small>{view.hint}</small>
+        <div className="demo-area">
+          <nav className="step-nav" aria-label="초기 설정 단계">
+            {steps.map((step, index) => (
+              <button key={step.key} className={index === activeStep ? 'active' : index < activeStep ? 'done' : ''} onClick={() => setActiveStep(index)}>
+                <span className="step-number">{index < activeStep ? '✓' : step.number}</span>
+                <span><strong>{step.title}</strong><small>{step.short}</small></span>
               </button>
             ))}
           </nav>
 
-          <div className="mini-meter">
-            <span>Edge server</span>
-            <strong>{syncLabel}</strong>
-            <div className="progress-bar">
-              <div style={{ width: edgeHealth.data?.status === 'ok' ? '100%' : '25%' }} />
+          <div className="phone-wrap">
+            <div className="phone" aria-live="polite">
+              <div className="phone-top"><span>9:41</span><i /><span>● ◒</span></div>
+              <div className="phone-screen">
+                {current.key === 'intro' && <IntroScreen />}
+                {current.key === 'permission' && <PermissionScreen permissions={permissions} setPermissions={setPermissions} />}
+                {current.key === 'keyboard' && <KeyboardScreen enabled={keyboardEnabled} setEnabled={setKeyboardEnabled} />}
+                {current.key === 'settings' && <SettingsScreen />}
+                {current.key === 'dashboard' && <DashboardScreen serverStatus={edgeHealth.data?.status ?? 'unavailable'} />}
+              </div>
+              <div className="home-indicator" />
             </div>
-            <small>{env.useMocks ? 'Mock mode' : env.apiBaseUrl}</small>
+            <div className="screen-note">
+              <span>{current.number} / 05</span>
+              <h2>{current.title}</h2>
+              <p>{current.description}</p>
+              {current.key === 'permission' && <button className="text-button" onClick={allowAll}>모두 허용하기</button>}
+              <div className="demo-controls">
+                <button onClick={goBack} disabled={activeStep === 0}>이전</button>
+                <button className="primary" onClick={goNext} disabled={activeStep === steps.length - 1}>다음 단계 <span>→</span></button>
+              </div>
+              <div className="progress"><i style={{ width: `${progress}%` }} /></div>
+            </div>
           </div>
-        </aside>
+        </div>
+      </section>
 
-        <section className="content-stack">
-          {activeView === 'overview' && (
-            <>
-              <section className="panel hero-panel">
-                <div className="panel-header">
-                  <div>
-                    <p className="panel-kicker">App blueprint</p>
-                    <h2>첫 화면 구성</h2>
-                  </div>
-                  <span className="status-pill">Phase 02</span>
-                </div>
-
-                <div className="hero-visual">
-                  <div className="hero-card hero-card-large">
-                    <span>Overview</span>
-                    <strong>Design system + data shell</strong>
-                    <p>상단 요약, 중간 작업 흐름, 하단 데이터 슬롯으로 분리</p>
-                  </div>
-                  <div className="hero-card hero-card-small">
-                    <span>Backend ready</span>
-                    <strong>Replace mock data only</strong>
-                  </div>
-                  <div className="hero-card hero-card-small">
-                    <span>Responsive</span>
-                    <strong>Desktop / tablet / mobile</strong>
-                  </div>
-                </div>
-              </section>
-
-              <section className="panel metrics-panel">
-                <div className="panel-header">
-                  <div>
-                    <p className="panel-kicker">Live placeholders</p>
-                    <h2>핵심 지표</h2>
-                  </div>
-                </div>
-
-                <div className="metrics-grid">
-                  {metrics.map((metric) => (
-                    <article key={metric.label} className={`metric-card tone-${metric.tone}`}>
-                      <span>{metric.label}</span>
-                      <strong>{metric.value}</strong>
-                      <p>{metric.delta}</p>
-                    </article>
-                  ))}
-                </div>
-              </section>
-
-              <section className="panel workflow-panel">
-                <div className="panel-header">
-                  <div>
-                    <p className="panel-kicker">Design report</p>
-                    <h2>설계 흐름에 맞춘 작업 영역</h2>
-                  </div>
-                </div>
-
-                <div className="workflow-list">
-                  {workflow.map((item) => (
-                    <article key={item.title} className="workflow-item">
-                      <div className="workflow-copy">
-                        <strong>{item.title}</strong>
-                        <p>
-                          {item.status} · {item.owner}
-                        </p>
-                        <small>{item.note}</small>
-                      </div>
-                      <div className="progress-wrap">
-                        <span>{item.progress}%</span>
-                        <div className="progress-bar">
-                          <div style={{ width: `${item.progress}%` }} />
-                        </div>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              </section>
-            </>
-          )}
-
-          {activeView === 'reports' && (
-            <section className="panel reports-panel">
-              <div className="panel-header">
-                <div>
-                  <p className="panel-kicker">Reports</p>
-                  <h2>보고서 목록과 상세</h2>
-                </div>
-                <span className="status-pill muted">{filteredReports.length} items</span>
-              </div>
-
-              <div className="toolbar-row">
-                <label className="search-box">
-                  <span>Search</span>
-                  <input
-                    value={searchText}
-                    onChange={(event) => setSearchText(event.target.value)}
-                    placeholder="제목, 카테고리, 담당자 검색"
-                  />
-                </label>
-
-                <div className="filter-chips">
-                  {(['all', 'draft', 'ready', 'archived'] as const).map((filter) => (
-                    <button
-                      key={filter}
-                      type="button"
-                      className={`chip ${statusFilter === filter ? 'active' : ''}`}
-                      onClick={() => setStatusFilter(filter)}
-                    >
-                      {filter}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="reports-grid">
-                <div className="report-list">
-                  {filteredReports.map((report) => (
-                    <button
-                      key={report.id}
-                      type="button"
-                      className={`report-card ${selectedReportId === report.id ? 'active' : ''}`}
-                      onClick={() => setSelectedReportId(report.id)}
-                    >
-                      <div className="report-card-top">
-                        <div>
-                          <span>{report.id}</span>
-                          <strong>{report.title}</strong>
-                        </div>
-                        <span className={`report-status status-${report.status}`}>{report.status}</span>
-                      </div>
-                      <p>{report.summary}</p>
-                      <div className="report-meta">
-                        <span>{report.category}</span>
-                        <span>{report.owner}</span>
-                        <span>{report.updatedAt}</span>
-                      </div>
-                      <div className="progress-bar report-progress">
-                        <div style={{ width: `${report.completion}%` }} />
-                      </div>
-                    </button>
-                  ))}
-                </div>
-
-                <aside className="report-detail">
-                  <div className="panel-subheader">
-                    <p>Selected report</p>
-                    <strong>{selectedReport.title}</strong>
-                  </div>
-                  <p>{selectedReport.summary}</p>
-                  <div className="detail-grid">
-                    <div>
-                      <span>Category</span>
-                      <strong>{selectedReport.category}</strong>
-                    </div>
-                    <div>
-                      <span>Owner</span>
-                      <strong>{selectedReport.owner}</strong>
-                    </div>
-                    <div>
-                      <span>Status</span>
-                      <strong>{selectedReport.status}</strong>
-                    </div>
-                    <div>
-                      <span>Completion</span>
-                      <strong>{selectedReport.completion}%</strong>
-                    </div>
-                  </div>
-
-                  <div className="tag-row">
-                    {selectedReport.tags.map((tag) => (
-                      <span key={tag} className="tag-pill">
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                </aside>
-              </div>
-            </section>
-          )}
-
-          {activeView === 'data' && (
-            <section className="panel contract-panel">
-              <div className="panel-header">
-                <div>
-                  <p className="panel-kicker">Data map</p>
-                  <h2>백엔드가 꽂히는 자리</h2>
-                </div>
-                <span className="status-pill muted">Contract</span>
-              </div>
-
-              <div className="slots-grid contract-grid">
-                {endpoints.map((endpoint) => (
-                  <article key={endpoint.path} className="slot-card">
-                    <div className="slot-heading">
-                      <strong>{endpoint.path}</strong>
-                      <span>{endpoint.method}</span>
-                    </div>
-                    <p>{endpoint.description}</p>
-                  </article>
-                ))}
-              </div>
-
-              <pre>{JSON.stringify(apiContract, null, 2)}</pre>
-
-              <div className="analysis-tester">
-                <div className="panel-subheader">
-                  <p>Integration test</p>
-                  <strong>위험도 분석 API 테스트</strong>
-                </div>
-                <textarea
-                  value={analysisText}
-                  onChange={(event) => setAnalysisText(event.target.value)}
-                  maxLength={2000}
-                  placeholder="분석할 문장을 입력하세요. 예: 지금 바로 계좌번호를 보내주세요"
-                />
-                <button
-                  type="button"
-                  className="button button-primary"
-                  disabled={!analysisText.trim() || riskAnalysis.isLoading}
-                  onClick={requestAnalysis}
-                >
-                  {riskAnalysis.isLoading ? '분석 중...' : '위험도 분석'}
-                </button>
-                {riskAnalysis.error && <p className="analysis-error">{riskAnalysis.error} 기본 입력은 계속 사용할 수 있습니다.</p>}
-                {riskAnalysis.data && (
-                  <div className={`analysis-result risk-${riskAnalysis.data.risk_level}`}>
-                    <strong>{riskAnalysis.data.risk_level.toUpperCase()} · {Math.round(riskAnalysis.data.risk_score * 100)}%</strong>
-                    <p>{riskAnalysis.data.warning?.message ?? '탐지된 위험이 없습니다.'}</p>
-                    <small>권장 조치: {riskAnalysis.data.recommended_action}</small>
-                  </div>
-                )}
-              </div>
-            </section>
-          )}
-
-          {activeView === 'activity' && (
-            <section className="panel activity-panel">
-              <div className="panel-header">
-                <div>
-                  <p className="panel-kicker">Activity</p>
-                  <h2>최근 작업 로그</h2>
-                </div>
-              </div>
-
-              <div className="timeline">
-                {visibleActivities.map((activity) => (
-                  <article key={activity.time + activity.title} className="timeline-item">
-                    <span>{activity.time}</span>
-                    <div>
-                      <strong>{activity.title}</strong>
-                      <p>{activity.detail}</p>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {activeView === 'settings' && (
-            <section className="panel settings-panel">
-              <div className="panel-header">
-                <div>
-                  <p className="panel-kicker">Settings</p>
-                  <h2>앱 동작 옵션</h2>
-                </div>
-              </div>
-
-              <div className="settings-grid">
-                <article className="setting-card">
-                  <strong>Mock data mode</strong>
-                  <p>현재는 하드코딩 데이터 기반. 이후 API 연결로 교체 예정.</p>
-                </article>
-                <article className="setting-card">
-                  <strong>Responsive layout</strong>
-                  <p>데스크톱, 태블릿, 모바일에서 동일한 정보 구조 유지.</p>
-                </article>
-                <article className="setting-card">
-                  <strong>Backend contract</strong>
-                  <p>데이터 슬롯과 엔드포인트를 먼저 고정해서 프론트-백 분리.</p>
-                </article>
-              </div>
-            </section>
-          )}
-
-          <section className="panel workflow-panel">
-            <div className="panel-header">
-              <div>
-                <p className="panel-kicker">State</p>
-                <h2>현재 앱 상태</h2>
-              </div>
-              <button type="button" className="button button-secondary" onClick={() => setActiveView('overview')}>
-                Reset view
-              </button>
-            </div>
-
-            <div className="state-strip">
-              <div>
-                <span>Active view</span>
-                <strong>{views.find((view) => view.key === activeView)?.label}</strong>
-              </div>
-              <div>
-                <span>Search</span>
-                <strong>{searchText || 'none'}</strong>
-              </div>
-              <div>
-                <span>Status filter</span>
-                <strong>{statusFilter}</strong>
-              </div>
-              <div>
-                <span>Selected report</span>
-                <strong>{selectedReport.id}</strong>
-              </div>
-            </div>
-          </section>
-        </section>
-      </main>
-    </div>
+      <section className="values">
+        <Value icon="settings" title="간단한 설정" text="단계별 안내로 누구나 쉽게 설정하고 사용할 수 있습니다." />
+        <Value icon="keyboard" title="직관적인 화면" text="큰 글씨와 한눈에 보이는 정보로 깔끔하게 구성했습니다." />
+        <Value icon="access" title="접근성 중심 안내" text="권한과 접근성 설정을 친절하게 안내해 모두가 쉽게 따라 합니다." />
+      </section>
+    </main>
   );
+}
+
+function IntroScreen() {
+  return <div className="screen intro-screen"><div className="shield-hero"><Icon name="shield" /><span className="keyboard-mini">⌨</span></div><h3>AI 보안 키보드</h3><p>AI가 위험을 감지하고<br />안전한 입력을 지켜드립니다.</p><ul><li><Icon name="shield" /> 전송 전 위험 감지</li><li><Icon name="settings" /> 쉬운 설정과 관리</li><li><Icon name="user" /> 보호자 알림 연계</li></ul><button className="phone-cta">시작하기</button><div className="dots"><b /><i /><i /><i /></div></div>;
+}
+
+function PermissionScreen({ permissions, setPermissions }: { permissions: boolean[]; setPermissions: (value: boolean[]) => void }) {
+  const rows = [{ icon: 'keyboard' as const, title: '키보드 사용', text: '보안 키보드를 입력 방식으로 사용하기 위해 필요합니다.' }, { icon: 'access' as const, title: '접근성 서비스', text: '위험 감지와 키보드 제어를 위해 필요합니다.' }, { icon: 'bell' as const, title: '알림 권한', text: '위험 탐지와 보호자 알림을 위해 필요합니다.' }];
+  return <div className="screen list-screen"><span className="screen-kicker">필수 권한 안내</span><h3>안전 기능을 위해<br />권한이 필요해요</h3><div className="permission-list">{rows.map((row, index) => <button key={row.title} onClick={() => setPermissions(permissions.map((value, i) => i === index ? !value : value))}><span className="row-icon"><Icon name={row.icon} /></span><span><strong>{row.title}</strong><small>{row.text}</small></span><i className={`toggle ${permissions[index] ? 'on' : ''}`} /></button>)}</div><button className="phone-cta" onClick={() => setPermissions([true, true, true])}>모두 허용하기</button><button className="skip">나중에 하기</button></div>;
+}
+
+function KeyboardScreen({ enabled, setEnabled }: { enabled: boolean; setEnabled: (value: boolean) => void }) {
+  return <div className="screen list-screen"><span className="screen-kicker">키보드 활성화</span><h3>AI 보안 키보드를<br />기본으로 설정해요</h3><p className="muted-copy">아래 순서대로 진행하면 바로 사용할 수 있습니다.</p><ol className="guide-list"><li className="complete"><b>1</b><span><strong>설정에서 키보드 열기</strong><small>일반 → 키보드 → 키보드</small></span><Icon name="check" /></li><li><b>2</b><span><strong>AI 보안 키보드 추가</strong><small>새로운 키보드 추가</small></span></li><li><b>3</b><span><strong>전체 접근 허용</strong><small>안전 분석 기능 사용</small></span></li></ol><button className={`phone-cta ${enabled ? 'success' : ''}`} onClick={() => setEnabled(!enabled)}>{enabled ? '활성화 완료 ✓' : '설정으로 이동'}</button><button className="skip">나중에 하기</button></div>;
+}
+
+function SettingsScreen() {
+  return <div className="screen app-screen"><div className="app-title"><h3>설정</h3><span>모든 보호 기능 ON</span></div><div className="settings-list"><Menu icon="keyboard" title="키보드 설정" text="등록 및 입력 옵션 설정" /><Menu icon="settings" title="경고 단계 설정" text="위험 단계별 경고 설정" /><Menu icon="shield" title="접근성 설정" text="큰 글씨·진동·음성 안내" /><Menu icon="user" title="보호자 설정" text="보호자 연결 및 알림 설정" /><Menu icon="help" title="로그 / 도움말" text="이력 확인 및 도움말 보기" /></div><PhoneNav active="more" /></div>;
+}
+
+function DashboardScreen({ serverStatus }: { serverStatus: 'ok' | 'degraded' | 'unavailable' }) {
+  const preciseAnalysis = serverStatus === 'ok';
+  return <div className="screen app-screen"><div className="app-title"><h3>보안 대시보드</h3><button>이번 주⌄</button></div><div className="safe-card"><span className="safe-icon"><Icon name="check" /></span><div><strong>{preciseAnalysis ? <>오늘 안전 상태: <em>안전</em></> : '기본 검사 모드'}</strong><small>{preciseAnalysis ? '엣지 AI 정밀 분석이 연결되어 있어요' : '서버 연결 전까지 단말 기본 검사를 사용해요'}</small></div><span>›</span></div><div className="analysis-card"><span>오늘 분석 <strong>24건</strong></span><ul><li className="warn">△ <span>주의</span><b>2건</b></li><li className="danger">△ <span>경고/차단</span><b>1건</b></li><li>♙ <span>보호자 알림</span><b>0건</b></li></ul></div><div className="activity-card"><strong>최근 활동</strong><ul><li><time>14:30</time><span>안전한 입력 감지</span></li><li><time>13:21</time><span>주의: 금융정보 입력</span></li><li><time>11:05</time><span>안전한 입력 감지</span></li></ul></div><PhoneNav active="home" /></div>;
+}
+
+function Menu({ icon, title, text }: { icon: 'keyboard' | 'settings' | 'shield' | 'user' | 'help'; title: string; text: string }) {
+  return <button><span className="row-icon"><Icon name={icon} /></span><span><strong>{title}</strong><small>{text}</small></span><b>›</b></button>;
+}
+
+function PhoneNav({ active }: { active: 'home' | 'more' }) {
+  return <nav className="phone-nav"><span className={active === 'home' ? 'active' : ''}>⌂<small>홈</small></span><span>♢<small>보안</small></span><span>♧<small>알림</small></span><span className={active === 'more' ? 'active' : ''}>•••<small>더보기</small></span></nav>;
+}
+
+function Value({ icon, title, text }: { icon: 'settings' | 'keyboard' | 'access'; title: string; text: string }) {
+  return <article><span className="value-icon"><Icon name={icon} /></span><div><h3>{title}</h3><p>{text}</p></div></article>;
 }
 
 export default App;

@@ -3,14 +3,14 @@ name: Release
 on:
   push:
     tags:
-      - 'Test-*'
+      - 'TEST-*'
 
 permissions:
   contents: write
 
 jobs:
   build-and-release:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
       - name: Checkout
@@ -25,15 +25,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build app
-        run: npm run build
-
-      - name: Package release asset
-        run: zip -r Test-0.0.0.zip dist
+      - name: Build Windows release
+        run: npm run dist:win
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: Test-0.0.0.zip
-          name: Test 0.0.0
+          files: release/*.exe
+          name: "TEST 0.0.1"
           generate_release_notes: true
