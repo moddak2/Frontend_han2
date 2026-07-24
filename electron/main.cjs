@@ -25,7 +25,7 @@ function createWindow() {
     minWidth: 1180,
     minHeight: 760,
     backgroundColor: '#0b1020',
-    title: 'Frontend Han2',
+    title: 'Fronte',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -47,7 +47,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   if (process.platform === 'win32') {
-    app.setAppUserModelId('com.frontendhan2.desktop');
+    app.setAppUserModelId('com.fronte.desktop');
   }
 
   createWindow();
