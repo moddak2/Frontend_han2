@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { env, useEdgeHealth } from './integration';
 
 type View = 'overview' | 'reports' | 'data' | 'activity' | 'settings';
 type ReportStatus = '완료' | '검토 중' | '초안';
@@ -41,11 +42,11 @@ const activities = [
 ];
 
 const endpoints = [
-  { method: 'GET', path: '/api/profile', description: '사용자 프로필과 권한', state: 'Ready' },
-  { method: 'GET', path: '/api/dashboard/summary', description: '대시보드 핵심 지표', state: 'Ready' },
-  { method: 'GET', path: '/api/reports', description: '보고서 목록과 필터', state: 'Mock' },
-  { method: 'GET', path: '/api/reports/:id', description: '보고서 상세 정보', state: 'Mock' },
-  { method: 'GET', path: '/api/activity', description: '최근 활동 로그', state: 'Planned' },
+  { method: 'GET', path: '/api/v1/health', description: '엣지 서버 상태와 기본 검사 모드 판단', state: 'Ready' },
+  { method: 'POST', path: '/api/v1/analyze', description: '입력·대화 문맥 위험도 분석', state: 'Ready' },
+  { method: 'GET', path: '/api/v1/model/info', description: 'AI 모델과 룰셋 버전 조회', state: 'Ready' },
+  { method: 'GET', path: '/api/v1/ruleset', description: '현재 사기 탐지 규칙 조회', state: 'Ready' },
+  { method: 'PUT', path: '/api/v1/ruleset', description: '관리자 권한으로 탐지 규칙 갱신', state: 'Ready' },
 ];
 
 const viewCopy: Record<View, { eyebrow: string; title: string; description: string }> = {
@@ -69,6 +70,7 @@ function App() {
   const [status, setStatus] = useState<'전체' | ReportStatus>('전체');
   const [selectedId, setSelectedId] = useState(reports[0].id);
   const [synced, setSynced] = useState(false);
+  const edgeHealth = useEdgeHealth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [screenSources, setScreenSources] = useState<ScreenSource[]>([]);
   const [showScreenPicker, setShowScreenPicker] = useState(false);
@@ -85,6 +87,12 @@ function App() {
 
   const changeView = (next: View) => { setView(next); setSidebarOpen(false); };
   const content = viewCopy[view];
+
+  const syncData = async () => {
+    await edgeHealth.refresh();
+    setSynced(true);
+    globalThis.setTimeout(() => setSynced(false), 1800);
+  };
 
   useEffect(() => {
     window.localStorage.setItem('han2-theme', theme);
@@ -170,7 +178,7 @@ function App() {
           <span className="nav-label">WORKSPACE</span>
           {navigation.map((item) => <button key={item.key} className={view === item.key ? 'active' : ''} onClick={() => changeView(item.key)}><i>{item.icon}</i><span><strong>{item.label}</strong><small>{item.caption}</small></span></button>)}
         </nav>
-        <div className="workspace-card"><span className="pulse" /><div><strong>Mock data mode</strong><small>백엔드 연결 준비 완료</small></div><span>›</span></div>
+        <div className="workspace-card"><span className="pulse" /><div><strong>{env.useMocks ? 'Mock data mode' : edgeHealth.isDegraded ? '기본 검사 모드' : 'Edge AI connected'}</strong><small>{edgeHealth.isLoading ? '서버 상태 확인 중' : edgeHealth.isDegraded ? '로컬 탐지는 계속 작동합니다' : '정밀 분석 서버 연결 완료'}</small></div><span>›</span></div>
         <div className="profile"><span>HB</span><div><strong>김한별</strong><small>Product manager</small></div><button aria-label="프로필 메뉴">•••</button></div>
       </aside>
       {sidebarOpen && <button className="scrim" aria-label="메뉴 닫기" onClick={() => setSidebarOpen(false)} />}
@@ -179,7 +187,7 @@ function App() {
         <header className="topbar">
           <button className="menu-button" onClick={() => setSidebarOpen(true)}>☰</button>
           <div className="breadcrumb"><span>HAN2</span><b>/</b><strong>{navigation.find((item) => item.key === view)?.label}</strong></div>
-          <div className="top-actions"><button className="icon-button" aria-label="알림">♢<i /></button><button className={`sync-button ${synced ? 'done' : ''}`} onClick={() => { setSynced(true); window.setTimeout(() => setSynced(false), 1800); }}><span>{synced ? '✓' : '↻'}</span>{synced ? '동기화 완료' : 'Sync data'}</button></div>
+          <div className="top-actions"><button className="icon-button" aria-label="알림">♢<i /></button><button className={`sync-button ${synced ? 'done' : ''}`} onClick={() => void syncData()} disabled={edgeHealth.isLoading}><span>{synced ? '✓' : '↻'}</span>{synced ? '동기화 완료' : edgeHealth.isLoading ? '확인 중' : 'Sync data'}</button></div>
         </header>
 
         <div className="content">
@@ -191,7 +199,7 @@ function App() {
           {view === 'settings' && <SettingsPage theme={theme} setTheme={setTheme} fontSize={fontSize} setFontSize={setFontSize} />}
         </div>
 
-        <footer className="statusbar"><span><i className={securityEnabled ? 'online' : 'offline'} /> Security {securityEnabled ? 'ON' : 'OFF'}</span><span>화면 <b>{navigation.find((item) => item.key === view)?.label}</b></span><span>채팅 모드 <b>{securityEnabled ? '보안 채팅' : '일반 채팅'}</b></span><span>필터 <b>{status}</b></span><span>선택 <b>{selected.id}</b></span></footer>
+        <footer className="statusbar"><span><i className={securityEnabled ? 'online' : 'offline'} /> Security {securityEnabled ? 'ON' : 'OFF'}</span><span>분석 서버 <b>{env.useMocks ? 'Mock' : edgeHealth.isDegraded ? 'Local fallback' : 'Online'}</b></span><span>화면 <b>{navigation.find((item) => item.key === view)?.label}</b></span><span>채팅 모드 <b>{securityEnabled ? '보안 채팅' : '일반 채팅'}</b></span><span>필터 <b>{status}</b></span><span>선택 <b>{selected.id}</b></span></footer>
       </main>
       {showSecurityConsent && <SecurityConsent onChoose={completeSecurityConsent} />}
       {showScreenPicker && <ScreenPicker sources={screenSources} onSelect={startScreenShare} onClose={() => setShowScreenPicker(false)} />}
@@ -258,7 +266,7 @@ function ReportsPage({ reports: visible, selected, search, status, setSearch, se
   </section>;
 }
 
-function DataMap() { return <section className="data-layout"><article className="panel endpoint-panel"><PanelHead label="ENDPOINTS" title="API 연결 지점" /><div className="endpoint-list">{endpoints.map((endpoint) => <div key={endpoint.path}><b>{endpoint.method}</b><code>{endpoint.path}</code><span>{endpoint.description}</span><i className={endpoint.state.toLowerCase()}>{endpoint.state}</i></div>)}</div></article><article className="panel schema-panel"><PanelHead label="RESPONSE MODEL" title="데이터 계약 예시" /><pre><span>{'{'}</span>{'\n  '}<b>"id"</b>: <em>"RPT-024"</em>,{'\n  '}<b>"title"</b>: <em>"제품 운영 리포트"</em>,{'\n  '}<b>"status"</b>: <em>"complete"</em>,{'\n  '}<b>"progress"</b>: <i>100</i>,{'\n  '}<b>"owner"</b>: {'{'} <b>"name"</b>: <em>"김한별"</em> {'}'},{'\n  '}<b>"tags"</b>: [<em>"운영"</em>, <em>"KPI"</em>]{'\n'}<span>{'}'}</span></pre></article></section> }
+function DataMap() { return <section className="data-layout"><article className="panel endpoint-panel"><PanelHead label="ENDPOINTS" title="API 연결 지점" /><div className="endpoint-list">{endpoints.map((endpoint) => <div key={`${endpoint.method}-${endpoint.path}`}><b>{endpoint.method}</b><code>{endpoint.path}</code><span>{endpoint.description}</span><i className={endpoint.state.toLowerCase()}>{endpoint.state}</i></div>)}</div></article><article className="panel schema-panel"><PanelHead label="RESPONSE MODEL" title="위험 분석 응답 계약" /><pre><span>{'{'}</span>{'\n  '}<b>"risk_level"</b>: <em>"safe | caution | danger"</em>,{'\n  '}<b>"risk_score"</b>: <i>0.82</i>,{'\n  '}<b>"recommended_action"</b>: <em>"block_and_confirm"</em>,{'\n  '}<b>"detected_personal_info"</b>: [],{'\n  '}<b>"detected_fraud_patterns"</b>: [],{'\n  '}<b>"analysis_meta"</b>: {'{'} <b>"analysis_source"</b>: <em>"edge"</em> {'}'}{'\n'}<span>{'}'}</span></pre></article></section> }
 
 function ActivityPage() { return <section className="panel timeline-panel"><div className="timeline-date">2026년 7월 21일 <span>오늘</span></div>{activities.map((item) => <Activity key={item.title} {...item} expanded />)}<div className="timeline-date muted">2026년 7월 20일</div>{activities.slice(1).reverse().map((item) => <Activity key={`old-${item.title}`} {...item} time="어제" expanded />)}</section> }
 
