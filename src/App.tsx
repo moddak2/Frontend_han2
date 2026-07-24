@@ -1,157 +1,279 @@
-import { useMemo, useState } from 'react';
-import { env } from './config/env';
-import { useEdgeHealth } from './hooks/useEdgeHealth';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { env, useEdgeHealth } from './integration';
 
-type StepKey = 'intro' | 'permission' | 'keyboard' | 'settings' | 'dashboard';
+type View = 'overview' | 'reports' | 'data' | 'activity' | 'settings';
+type ReportStatus = '완료' | '검토 중' | '초안';
+type Theme = 'light' | 'dark';
+type FontSize = 'small' | 'medium' | 'large';
 
-type Step = {
-  key: StepKey;
-  number: string;
+type Report = {
+  id: string;
   title: string;
-  short: string;
   description: string;
+  category: string;
+  owner: string;
+  status: ReportStatus;
+  progress: number;
+  updated: string;
+  tags: string[];
 };
 
-const steps: Step[] = [
-  { key: 'intro', number: '01', title: '첫 실행', short: '서비스 소개', description: 'AI가 위험을 감지하고 안전한 입력을 지켜드려요.' },
-  { key: 'permission', number: '02', title: '필수 권한', short: '안전 기능 허용', description: '키보드, 접근성, 알림 권한을 한 번에 확인해요.' },
-  { key: 'keyboard', number: '03', title: '키보드 활성화', short: '기본 입력 설정', description: 'AI 보안 키보드를 기본 입력 방식으로 설정해요.' },
-  { key: 'settings', number: '04', title: '설정 홈', short: '보호 기능 관리', description: '경고, 접근성, 보호자 설정을 쉽게 관리해요.' },
-  { key: 'dashboard', number: '05', title: '보안 대시보드', short: '오늘의 안전 확인', description: '탐지 현황과 최근 활동을 한눈에 확인해요.' },
+const navigation: { key: View; label: string; caption: string; icon: string }[] = [
+  { key: 'overview', label: 'Overview', caption: '전체 현황', icon: '◫' },
+  { key: 'reports', label: 'Reports', caption: '보고서 관리', icon: '▤' },
+  { key: 'data', label: 'Data Map', caption: '데이터 연결', icon: '⌘' },
+  { key: 'activity', label: 'Activity', caption: '활동 기록', icon: '◷' },
+  { key: 'settings', label: 'Settings', caption: '환경 설정', icon: '⚙' },
 ];
 
-const Icon = ({ name }: { name: 'shield' | 'keyboard' | 'access' | 'bell' | 'settings' | 'help' | 'user' | 'check' }) => {
-  const paths = {
-    shield: <><path d="M12 3 5 6v5c0 4.6 3 7.5 7 9 4-1.5 7-4.4 7-9V6l-7-3Z"/><path d="m9.3 11.8 1.8 1.8 3.8-4"/></>,
-    keyboard: <><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M19 10h.01M7 14h.01M11 14h6"/></>,
-    access: <><circle cx="12" cy="4.5" r="2"/><path d="M5 8h14M12 7v6m0 0-4 7m4-7 4 7"/></>,
-    bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"/></>,
-    settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></>,
-    help: <><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.3 2.3 0 1 1 3.4 2c-1.2.7-1.2 1.4-1.2 2M12 17h.01"/></>,
-    user: <><circle cx="12" cy="8" r="3"/><path d="M5 20c.7-4 3-6 7-6s6.3 2 7 6"/></>,
-    check: <path d="m5 12 4 4L19 6"/>,
-  };
-  return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+const reports: Report[] = [
+  { id: 'RPT-024', title: '2026 제품 운영 리포트', description: '핵심 제품 지표와 운영 상태를 한눈에 정리한 월간 보고서입니다.', category: 'Operations', owner: '김한별', status: '완료', progress: 100, updated: '오늘 09:42', tags: ['운영', 'KPI', '월간'] },
+  { id: 'RPT-023', title: '고객 경험 개선안', description: '사용자 피드백과 행동 데이터를 기반으로 개선 과제를 정리했습니다.', category: 'Experience', owner: '이서윤', status: '검토 중', progress: 78, updated: '어제 17:20', tags: ['UX', '고객', '분석'] },
+  { id: 'RPT-022', title: '백엔드 연동 명세', description: '프론트엔드 데이터 슬롯과 API 응답 계약을 정의합니다.', category: 'Engineering', owner: '박지호', status: '검토 중', progress: 64, updated: '7월 19일', tags: ['API', 'Contract'] },
+  { id: 'RPT-021', title: '3분기 캠페인 성과', description: '채널별 유입과 전환 흐름을 비교한 캠페인 중간 보고서입니다.', category: 'Marketing', owner: '최유진', status: '초안', progress: 36, updated: '7월 18일', tags: ['캠페인', '전환'] },
+  { id: 'RPT-020', title: '디자인 시스템 점검', description: '컴포넌트 일관성과 접근성 기준의 적용 상태를 점검했습니다.', category: 'Design', owner: '한지민', status: '완료', progress: 100, updated: '7월 16일', tags: ['UI', '접근성'] },
+];
+
+const activities = [
+  { icon: '✓', tone: 'green', title: '제품 운영 리포트가 승인되었습니다', detail: '김한별 · RPT-024', time: '12분 전' },
+  { icon: '↗', tone: 'blue', title: 'API 데이터 슬롯이 준비되었습니다', detail: '박지호 · /api/dashboard/summary', time: '1시간 전' },
+  { icon: '✦', tone: 'purple', title: '디자인 검토 의견이 반영되었습니다', detail: '한지민 · UI Shell v2', time: '어제' },
+  { icon: '↻', tone: 'amber', title: '샘플 데이터가 갱신되었습니다', detail: 'System · 24개 레코드', time: '어제' },
+];
+
+const endpoints = [
+  { method: 'GET', path: '/api/v1/health', description: '엣지 서버 상태와 기본 검사 모드 판단', state: 'Ready' },
+  { method: 'POST', path: '/api/v1/analyze', description: '입력·대화 문맥 위험도 분석', state: 'Ready' },
+  { method: 'GET', path: '/api/v1/model/info', description: 'AI 모델과 룰셋 버전 조회', state: 'Ready' },
+  { method: 'GET', path: '/api/v1/ruleset', description: '현재 사기 탐지 규칙 조회', state: 'Ready' },
+  { method: 'PUT', path: '/api/v1/ruleset', description: '관리자 권한으로 탐지 규칙 갱신', state: 'Ready' },
+];
+
+const viewCopy: Record<View, { eyebrow: string; title: string; description: string }> = {
+  overview: { eyebrow: 'WORKSPACE OVERVIEW', title: '좋은 아침이에요, 한별님.', description: '프로젝트의 흐름과 중요한 변화를 한곳에서 확인하세요.' },
+  reports: { eyebrow: 'REPORT LIBRARY', title: '보고서', description: '진행 중인 보고서를 찾고 상태와 담당자를 관리하세요.' },
+  data: { eyebrow: 'BACKEND CONTRACT', title: 'Data Map', description: '화면의 데이터 슬롯과 연결될 API 계약을 확인하세요.' },
+  activity: { eyebrow: 'TEAM HISTORY', title: '활동 로그', description: '프로젝트에서 일어난 주요 변경을 시간순으로 확인하세요.' },
+  settings: { eyebrow: 'WORKSPACE CONTROL', title: '환경 설정', description: '현재 앱의 동작 방식과 연동 환경을 관리하세요.' },
 };
 
 function App() {
-  const [activeStep, setActiveStep] = useState(0);
-  const [permissions, setPermissions] = useState([false, false, false]);
-  const [keyboardEnabled, setKeyboardEnabled] = useState(false);
+  const [theme, setTheme] = useState<Theme>(() => window.localStorage.getItem('han2-theme') === 'dark' ? 'dark' : 'light');
+  const [fontSize, setFontSize] = useState<FontSize>(() => {
+    const saved = window.localStorage.getItem('han2-font-size');
+    return saved === 'small' || saved === 'large' ? saved : 'medium';
+  });
+  const [securityEnabled, setSecurityEnabled] = useState(() => window.localStorage.getItem('han2-security') === 'on');
+  const [showSecurityConsent, setShowSecurityConsent] = useState(() => window.localStorage.getItem('han2-security-consent') !== 'completed');
+  const [view, setView] = useState<View>('overview');
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState<'전체' | ReportStatus>('전체');
+  const [selectedId, setSelectedId] = useState(reports[0].id);
+  const [synced, setSynced] = useState(false);
   const edgeHealth = useEdgeHealth();
-  const current = steps[activeStep];
-  const progress = useMemo(() => ((activeStep + 1) / steps.length) * 100, [activeStep]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [screenSources, setScreenSources] = useState<ScreenSource[]>([]);
+  const [showScreenPicker, setShowScreenPicker] = useState(false);
+  const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
+  const [sharedSourceName, setSharedSourceName] = useState('');
+  const [screenError, setScreenError] = useState('');
+  const previewRef = useRef<HTMLVideoElement>(null);
+  const selected = reports.find((report) => report.id === selectedId) ?? reports[0];
+  const filtered = useMemo(() => reports.filter((report) => {
+    const query = search.trim().toLowerCase();
+    const matchesSearch = !query || `${report.title} ${report.owner} ${report.category} ${report.tags.join(' ')}`.toLowerCase().includes(query);
+    return matchesSearch && (status === '전체' || report.status === status);
+  }), [search, status]);
 
-  const goNext = () => setActiveStep((value) => Math.min(value + 1, steps.length - 1));
-  const goBack = () => setActiveStep((value) => Math.max(value - 1, 0));
-  const allowAll = () => setPermissions([true, true, true]);
+  const changeView = (next: View) => { setView(next); setSidebarOpen(false); };
+  const content = viewCopy[view];
+
+  const syncData = async () => {
+    await edgeHealth.refresh();
+    setSynced(true);
+    globalThis.setTimeout(() => setSynced(false), 1800);
+  };
+
+  useEffect(() => {
+    window.localStorage.setItem('han2-theme', theme);
+    document.documentElement.style.colorScheme = theme;
+  }, [theme]);
+
+  useEffect(() => {
+    window.localStorage.setItem('han2-font-size', fontSize);
+  }, [fontSize]);
+
+  useEffect(() => {
+    window.localStorage.setItem('han2-security', securityEnabled ? 'on' : 'off');
+  }, [securityEnabled]);
+
+  useEffect(() => {
+    if (previewRef.current) previewRef.current.srcObject = screenStream;
+  }, [screenStream]);
+
+  useEffect(() => () => {
+    screenStream?.getTracks().forEach((track) => track.stop());
+  }, [screenStream]);
+
+  const openScreenPicker = async () => {
+    setScreenError('');
+    if (!securityEnabled) {
+      setScreenError('화면 공유를 시작하려면 먼저 보안채팅을 활성화하세요.');
+      return;
+    }
+    if (!window.frontendHan2) {
+      setScreenError('화면 공유는 Electron 데스크톱 앱에서만 사용할 수 있습니다.');
+      return;
+    }
+    try {
+      const sources = await window.frontendHan2.getScreenSources();
+      setScreenSources(sources);
+      setShowScreenPicker(true);
+    } catch {
+      setScreenError('공유 가능한 화면 목록을 불러오지 못했습니다.');
+    }
+  };
+
+  const stopScreenShare = () => {
+    screenStream?.getTracks().forEach((track) => track.stop());
+    setScreenStream(null);
+    setSharedSourceName('');
+  };
+
+  const startScreenShare = async (source: ScreenSource) => {
+    try {
+      stopScreenShare();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          mandatory: {
+            chromeMediaSource: 'desktop',
+            chromeMediaSourceId: source.id,
+            maxFrameRate: 10,
+          },
+        } as MediaTrackConstraints,
+      });
+      stream.getVideoTracks()[0]?.addEventListener('ended', stopScreenShare, { once: true });
+      setScreenStream(stream);
+      setSharedSourceName(source.name);
+      setShowScreenPicker(false);
+      setScreenError('');
+    } catch {
+      setScreenError('화면 공유를 시작하지 못했습니다. 운영체제의 화면 녹화 권한을 확인하세요.');
+      setShowScreenPicker(false);
+    }
+  };
+
+  const completeSecurityConsent = (allowed: boolean) => {
+    setSecurityEnabled(allowed);
+    window.localStorage.setItem('han2-security-consent', 'completed');
+    setShowSecurityConsent(false);
+  };
 
   return (
-    <main className="site-shell">
-      <header className="site-header">
-        <a className="brand" href="#top" aria-label="AI 보안 키보드 홈">
-          <span className="brand-mark"><Icon name="shield" /><span>+</span></span>
-          <span><strong>AI 보안 키보드</strong><small>입력하는 순간부터 안전하게</small></span>
-        </a>
-        <button className="header-status" onClick={() => void edgeHealth.refresh()} title="서버 상태 다시 확인">
-          <span className={`status-dot ${edgeHealth.isDegraded ? 'degraded' : ''}`} />
-          {edgeHealth.isLoading
-            ? '보안 서버 확인 중'
-            : edgeHealth.isDegraded
-              ? '기본 검사 모드 작동 중'
-              : `보안 시스템 정상 작동 중${env.useMocks ? ' (Mock)' : ''}`}
-        </button>
-      </header>
+    <div className="app-shell" data-theme={theme} data-font-size={fontSize}>
+      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+        <div className="brand"><span className="brand-symbol">H</span><div><strong>HAN2</strong><small>DATA WORKSPACE</small></div></div>
+        <nav className="main-nav" aria-label="메인 메뉴">
+          <span className="nav-label">WORKSPACE</span>
+          {navigation.map((item) => <button key={item.key} className={view === item.key ? 'active' : ''} onClick={() => changeView(item.key)}><i>{item.icon}</i><span><strong>{item.label}</strong><small>{item.caption}</small></span></button>)}
+        </nav>
+        <div className="workspace-card"><span className="pulse" /><div><strong>{env.useMocks ? 'Mock data mode' : edgeHealth.isDegraded ? '기본 검사 모드' : 'Edge AI connected'}</strong><small>{edgeHealth.isLoading ? '서버 상태 확인 중' : edgeHealth.isDegraded ? '로컬 탐지는 계속 작동합니다' : '정밀 분석 서버 연결 완료'}</small></div><span>›</span></div>
+        <div className="profile"><span>HB</span><div><strong>김한별</strong><small>Product manager</small></div><button aria-label="프로필 메뉴">•••</button></div>
+      </aside>
+      {sidebarOpen && <button className="scrim" aria-label="메뉴 닫기" onClick={() => setSidebarOpen(false)} />}
 
-      <section className="hero" id="top">
-        <div className="hero-copy">
-          <span className="overline">SECURE INPUT EXPERIENCE</span>
-          <h1>누구나 안심하고<br /><em>입력할 수 있도록</em></h1>
-          <p>AI가 개인정보와 사기 위험을 실시간으로 감지합니다.<br />복잡한 설정 없이, 다섯 단계면 준비가 끝나요.</p>
-          <div className="hero-points">
-            <span><Icon name="check" /> 전송 전 위험 감지</span>
-            <span><Icon name="check" /> 쉬운 접근성 설정</span>
-          </div>
+      <main className="main-panel">
+        <header className="topbar">
+          <button className="menu-button" onClick={() => setSidebarOpen(true)}>☰</button>
+          <div className="breadcrumb"><span>HAN2</span><b>/</b><strong>{navigation.find((item) => item.key === view)?.label}</strong></div>
+          <div className="top-actions"><button className="icon-button" aria-label="알림">♢<i /></button><button className={`sync-button ${synced ? 'done' : ''}`} onClick={() => void syncData()} disabled={edgeHealth.isLoading}><span>{synced ? '✓' : '↻'}</span>{synced ? '동기화 완료' : edgeHealth.isLoading ? '확인 중' : 'Sync data'}</button></div>
+        </header>
+
+        <div className="content">
+          <section className="page-heading"><div><span className="eyebrow">{content.eyebrow}</span><h1>{content.title}</h1><p>{content.description}</p></div><div className="today"><span>오늘</span><strong>2026. 07. 21</strong></div></section>
+          {view === 'overview' && <Overview onOpenReports={() => changeView('reports')} selected={selected} securityEnabled={securityEnabled} setSecurityEnabled={setSecurityEnabled} screenStream={screenStream} sharedSourceName={sharedSourceName} previewRef={previewRef} onStartScreenShare={openScreenPicker} onStopScreenShare={stopScreenShare} screenError={screenError} />}
+          {view === 'reports' && <ReportsPage reports={filtered} selected={selected} search={search} status={status} setSearch={setSearch} setStatus={setStatus} setSelectedId={setSelectedId} />}
+          {view === 'data' && <DataMap />}
+          {view === 'activity' && <ActivityPage />}
+          {view === 'settings' && <SettingsPage theme={theme} setTheme={setTheme} fontSize={fontSize} setFontSize={setFontSize} />}
         </div>
 
-        <div className="demo-area">
-          <nav className="step-nav" aria-label="초기 설정 단계">
-            {steps.map((step, index) => (
-              <button key={step.key} className={index === activeStep ? 'active' : index < activeStep ? 'done' : ''} onClick={() => setActiveStep(index)}>
-                <span className="step-number">{index < activeStep ? '✓' : step.number}</span>
-                <span><strong>{step.title}</strong><small>{step.short}</small></span>
-              </button>
-            ))}
-          </nav>
-
-          <div className="phone-wrap">
-            <div className="phone" aria-live="polite">
-              <div className="phone-top"><span>9:41</span><i /><span>● ◒</span></div>
-              <div className="phone-screen">
-                {current.key === 'intro' && <IntroScreen />}
-                {current.key === 'permission' && <PermissionScreen permissions={permissions} setPermissions={setPermissions} />}
-                {current.key === 'keyboard' && <KeyboardScreen enabled={keyboardEnabled} setEnabled={setKeyboardEnabled} />}
-                {current.key === 'settings' && <SettingsScreen />}
-                {current.key === 'dashboard' && <DashboardScreen serverStatus={edgeHealth.data?.status ?? 'unavailable'} />}
-              </div>
-              <div className="home-indicator" />
-            </div>
-            <div className="screen-note">
-              <span>{current.number} / 05</span>
-              <h2>{current.title}</h2>
-              <p>{current.description}</p>
-              {current.key === 'permission' && <button className="text-button" onClick={allowAll}>모두 허용하기</button>}
-              <div className="demo-controls">
-                <button onClick={goBack} disabled={activeStep === 0}>이전</button>
-                <button className="primary" onClick={goNext} disabled={activeStep === steps.length - 1}>다음 단계 <span>→</span></button>
-              </div>
-              <div className="progress"><i style={{ width: `${progress}%` }} /></div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="values">
-        <Value icon="settings" title="간단한 설정" text="단계별 안내로 누구나 쉽게 설정하고 사용할 수 있습니다." />
-        <Value icon="keyboard" title="직관적인 화면" text="큰 글씨와 한눈에 보이는 정보로 깔끔하게 구성했습니다." />
-        <Value icon="access" title="접근성 중심 안내" text="권한과 접근성 설정을 친절하게 안내해 모두가 쉽게 따라 합니다." />
-      </section>
-    </main>
+        <footer className="statusbar"><span><i className={securityEnabled ? 'online' : 'offline'} /> Security {securityEnabled ? 'ON' : 'OFF'}</span><span>분석 서버 <b>{env.useMocks ? 'Mock' : edgeHealth.isDegraded ? 'Local fallback' : 'Online'}</b></span><span>화면 <b>{navigation.find((item) => item.key === view)?.label}</b></span><span>채팅 모드 <b>{securityEnabled ? '보안 채팅' : '일반 채팅'}</b></span><span>필터 <b>{status}</b></span><span>선택 <b>{selected.id}</b></span></footer>
+      </main>
+      {showSecurityConsent && <SecurityConsent onChoose={completeSecurityConsent} />}
+      {showScreenPicker && <ScreenPicker sources={screenSources} onSelect={startScreenShare} onClose={() => setShowScreenPicker(false)} />}
+    </div>
   );
 }
 
-function IntroScreen() {
-  return <div className="screen intro-screen"><div className="shield-hero"><Icon name="shield" /><span className="keyboard-mini">⌨</span></div><h3>AI 보안 키보드</h3><p>AI가 위험을 감지하고<br />안전한 입력을 지켜드립니다.</p><ul><li><Icon name="shield" /> 전송 전 위험 감지</li><li><Icon name="settings" /> 쉬운 설정과 관리</li><li><Icon name="user" /> 보호자 알림 연계</li></ul><button className="phone-cta">시작하기</button><div className="dots"><b /><i /><i /><i /></div></div>;
+function SecurityConsent({ onChoose }: { onChoose: (allowed: boolean) => void }) {
+  return <div className="consent-backdrop" role="presentation"><section className="consent-dialog" role="dialog" aria-modal="true" aria-labelledby="consent-title" aria-describedby="consent-description"><span className="consent-mark">H</span><span className="consent-kicker">WELCOME TO HAN2</span><h2 id="consent-title">채팅 보안 기능을<br />실행할까요?</h2><p id="consent-description">보안 기능을 허용하면 채팅 중 개인정보와 사기 위험을 확인하고 필요한 피드백과 보호 알림을 제공합니다.</p><div className="consent-points"><span><i>✓</i><b>위험 메시지 실시간 감지</b></span><span><i>✓</i><b>안전한 채팅을 위한 피드백</b></span><span><i>✓</i><b>필요한 순간 보호 알림</b></span></div><div className="consent-notice"><i>i</i><span>지금 선택한 설정은 메인 화면에서 언제든지 변경할 수 있습니다.</span></div><div className="consent-actions"><button className="deny" onClick={() => onChoose(false)}>허용하지 않음</button><button className="allow" onClick={() => onChoose(true)}><span>✓</span> 허용하고 시작</button></div><small>선택하기 전까지 보안 기능은 실행되지 않습니다.</small></section></div>;
 }
 
-function PermissionScreen({ permissions, setPermissions }: { permissions: boolean[]; setPermissions: (value: boolean[]) => void }) {
-  const rows = [{ icon: 'keyboard' as const, title: '키보드 사용', text: '보안 키보드를 입력 방식으로 사용하기 위해 필요합니다.' }, { icon: 'access' as const, title: '접근성 서비스', text: '위험 감지와 키보드 제어를 위해 필요합니다.' }, { icon: 'bell' as const, title: '알림 권한', text: '위험 탐지와 보호자 알림을 위해 필요합니다.' }];
-  return <div className="screen list-screen"><span className="screen-kicker">필수 권한 안내</span><h3>안전 기능을 위해<br />권한이 필요해요</h3><div className="permission-list">{rows.map((row, index) => <button key={row.title} onClick={() => setPermissions(permissions.map((value, i) => i === index ? !value : value))}><span className="row-icon"><Icon name={row.icon} /></span><span><strong>{row.title}</strong><small>{row.text}</small></span><i className={`toggle ${permissions[index] ? 'on' : ''}`} /></button>)}</div><button className="phone-cta" onClick={() => setPermissions([true, true, true])}>모두 허용하기</button><button className="skip">나중에 하기</button></div>;
+function Overview({ onOpenReports, selected, securityEnabled, setSecurityEnabled, screenStream, sharedSourceName, previewRef, onStartScreenShare, onStopScreenShare, screenError }: { onOpenReports: () => void; selected: Report; securityEnabled: boolean; setSecurityEnabled: (enabled: boolean) => void; screenStream: MediaStream | null; sharedSourceName: string; previewRef: React.RefObject<HTMLVideoElement>; onStartScreenShare: () => void; onStopScreenShare: () => void; screenError: string }) {
+  const metrics = [
+    { label: '전체 보고서', value: '24', change: '+3 이번 달', icon: '▤', tone: 'blue' },
+    { label: '검토 대기', value: '07', change: '2개 긴급', icon: '◷', tone: 'amber' },
+    { label: '완료율', value: '82%', change: '+12.4%', icon: '↗', tone: 'green' },
+    { label: '연결 슬롯', value: '05', change: '2개 준비됨', icon: '⌘', tone: 'purple' },
+  ];
+  return <>
+    <section className={`security-control ${securityEnabled ? 'enabled' : 'disabled'}`}>
+      <div className="security-identity"><span className="security-shield">{securityEnabled ? '✓' : '—'}</span><div><span className="security-label">CHAT SECURITY SYSTEM</span><h2>{securityEnabled ? '보안 채팅이 실행 중입니다' : '일반 채팅 모드입니다'}</h2><p>{securityEnabled ? '메시지의 개인정보와 사기 위험을 확인하고 실시간 피드백을 제공합니다.' : '채팅 내용에 보안 분석이나 피드백이 적용되지 않습니다.'}</p></div></div>
+      <div className="security-actions"><span className="mode-state"><i />{securityEnabled ? 'Protection active' : 'Protection paused'}</span><div className="power-switch" role="group" aria-label="채팅 보안 모드"><button className={securityEnabled ? 'active' : ''} onClick={() => setSecurityEnabled(true)}>ON</button><button className={!securityEnabled ? 'active' : ''} onClick={() => setSecurityEnabled(false)}>OFF</button></div></div>
+      <div className="security-features"><span className={securityEnabled ? 'active' : ''}><i>◉</i><b>위험 감지</b><small>{securityEnabled ? '실시간 분석 중' : '사용 안 함'}</small></span><span className={securityEnabled ? 'active' : ''}><i>✦</i><b>채팅 피드백</b><small>{securityEnabled ? '피드백 활성화' : '사용 안 함'}</small></span><span className={securityEnabled ? 'active' : ''}><i>♢</i><b>보호 알림</b><small>{securityEnabled ? '알림 대기 중' : '사용 안 함'}</small></span></div>
+    </section>
+    <section className={`screen-share-panel panel ${screenStream ? 'sharing' : ''}`}>
+      <div className="screen-share-copy">
+        <span className="eyebrow">LIVE SCREEN</span>
+        <h2>{screenStream ? '화면 공유 중' : '실시간 화면 분석 준비'}</h2>
+        <p>{screenStream ? `${sharedSourceName} 화면을 앱 내부에서 미리 보고 있습니다. 현재 외부 전송이나 AI 분석은 하지 않습니다.` : '공유할 화면이나 창을 직접 선택하세요. 공유 중에는 언제든 즉시 중지할 수 있습니다.'}</p>
+        {screenError && <strong className="screen-error">{screenError}</strong>}
+        <div className="screen-share-actions">
+          {!screenStream && <button className="screen-start" onClick={onStartScreenShare} disabled={!securityEnabled}>화면 선택 및 공유 시작</button>}
+          {screenStream && <button className="screen-stop" onClick={onStopScreenShare}>공유 중지</button>}
+          <span><i className={screenStream ? 'live' : ''} />{screenStream ? '화면 캡처 활성' : securityEnabled ? '공유 대기 중' : '보안채팅을 먼저 켜세요'}</span>
+        </div>
+      </div>
+      <div className="screen-preview">
+        {screenStream ? <video ref={previewRef} autoPlay muted playsInline /> : <div><b>화면 미리보기</b><span>선택한 화면이 여기에 표시됩니다.</span></div>}
+      </div>
+    </section>
+    <section className="metrics">{metrics.map((metric) => <article key={metric.label} className={`metric ${metric.tone}`}><div><span>{metric.label}</span><strong>{metric.value}</strong><small>{metric.change}</small></div><i>{metric.icon}</i></article>)}</section>
+    <section className="dashboard-grid">
+      <article className="panel workflow-panel"><PanelHead label="WORKFLOW" title="이번 주 작업 흐름" action="전체 보기" onAction={onOpenReports} /><div className="workflow-bars"><div className="bar-labels"><span>초안 <b>4</b></span><span>검토 중 <b>7</b></span><span>승인 완료 <b>13</b></span></div><div className="stacked"><i style={{ width: '17%' }} /><i style={{ width: '29%' }} /><i style={{ width: '54%' }} /></div></div><div className="report-preview"><span className="doc-icon">▤</span><div><small>최근 선택 보고서</small><strong>{selected.title}</strong><span>{selected.owner} · {selected.updated}</span></div><StatusBadge status={selected.status} /></div></article>
+      <article className="panel activity-panel"><PanelHead label="RECENT ACTIVITY" title="최근 활동" /><div className="activity-list">{activities.slice(0, 4).map((item) => <Activity key={item.title} {...item} />)}</div></article>
+      <article className="panel contract-panel"><PanelHead label="DATA CONTRACT" title="백엔드 연결 준비" action="Data Map 열기" /><div className="contract-copy"><div className="orbit"><span>API</span><i /><i /><i /></div><div><strong>화면 구조는 준비되었습니다.</strong><p>샘플 데이터를 API 응답으로 교체하면 현재 UI 구조를 그대로 사용할 수 있어요.</p><div className="contract-stats"><span><b>5</b> endpoints</span><span><b>12</b> data slots</span><span><b>80%</b> ready</span></div></div></div></article>
+    </section>
+  </>;
 }
 
-function KeyboardScreen({ enabled, setEnabled }: { enabled: boolean; setEnabled: (value: boolean) => void }) {
-  return <div className="screen list-screen"><span className="screen-kicker">키보드 활성화</span><h3>AI 보안 키보드를<br />기본으로 설정해요</h3><p className="muted-copy">아래 순서대로 진행하면 바로 사용할 수 있습니다.</p><ol className="guide-list"><li className="complete"><b>1</b><span><strong>설정에서 키보드 열기</strong><small>일반 → 키보드 → 키보드</small></span><Icon name="check" /></li><li><b>2</b><span><strong>AI 보안 키보드 추가</strong><small>새로운 키보드 추가</small></span></li><li><b>3</b><span><strong>전체 접근 허용</strong><small>안전 분석 기능 사용</small></span></li></ol><button className={`phone-cta ${enabled ? 'success' : ''}`} onClick={() => setEnabled(!enabled)}>{enabled ? '활성화 완료 ✓' : '설정으로 이동'}</button><button className="skip">나중에 하기</button></div>;
+function ScreenPicker({ sources, onSelect, onClose }: { sources: ScreenSource[]; onSelect: (source: ScreenSource) => void; onClose: () => void }) {
+  return <div className="screen-picker-backdrop" role="presentation">
+    <section className="screen-picker" role="dialog" aria-modal="true" aria-labelledby="screen-picker-title">
+      <header><div><span>SHARE WITH HAN2</span><h2 id="screen-picker-title">공유할 화면을 선택하세요</h2><p>선택한 화면은 미리보기에만 사용되며 아직 외부로 전송되지 않습니다.</p></div><button onClick={onClose} aria-label="닫기">×</button></header>
+      <div className="screen-source-grid">{sources.map((source) => <button key={source.id} onClick={() => onSelect(source)}><img src={source.thumbnail} alt="" /><span>{source.name}</span></button>)}</div>
+      {sources.length === 0 && <p className="screen-empty">공유 가능한 화면을 찾지 못했습니다.</p>}
+    </section>
+  </div>;
 }
 
-function SettingsScreen() {
-  return <div className="screen app-screen"><div className="app-title"><h3>설정</h3><span>모든 보호 기능 ON</span></div><div className="settings-list"><Menu icon="keyboard" title="키보드 설정" text="등록 및 입력 옵션 설정" /><Menu icon="settings" title="경고 단계 설정" text="위험 단계별 경고 설정" /><Menu icon="shield" title="접근성 설정" text="큰 글씨·진동·음성 안내" /><Menu icon="user" title="보호자 설정" text="보호자 연결 및 알림 설정" /><Menu icon="help" title="로그 / 도움말" text="이력 확인 및 도움말 보기" /></div><PhoneNav active="more" /></div>;
+function ReportsPage({ reports: visible, selected, search, status, setSearch, setStatus, setSelectedId }: { reports: Report[]; selected: Report; search: string; status: '전체' | ReportStatus; setSearch: (value: string) => void; setStatus: (value: '전체' | ReportStatus) => void; setSelectedId: (value: string) => void }) {
+  return <section className="reports-layout">
+    <div className="panel report-list-panel"><div className="report-tools"><label><span>⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="보고서, 담당자, 태그 검색" /></label><div className="filter-row">{(['전체', '완료', '검토 중', '초안'] as const).map((item) => <button key={item} className={status === item ? 'active' : ''} onClick={() => setStatus(item)}>{item}</button>)}</div></div><div className="table-head"><span>보고서</span><span>담당자</span><span>진행률</span><span>상태</span></div><div className="report-rows">{visible.map((report) => <button key={report.id} className={selected.id === report.id ? 'selected' : ''} onClick={() => setSelectedId(report.id)}><span className="report-title"><i>▤</i><span><strong>{report.title}</strong><small>{report.id} · {report.category}</small></span></span><span className="owner"><i>{report.owner.slice(-2)}</i>{report.owner}</span><span className="row-progress"><i><b style={{ width: `${report.progress}%` }} /></i>{report.progress}%</span><StatusBadge status={report.status} /></button>)}</div>{visible.length === 0 && <div className="empty">검색 조건에 맞는 보고서가 없습니다.</div>}</div>
+    <aside className="panel detail-panel"><span className="detail-kicker">REPORT DETAIL</span><div className="detail-title"><i>▤</i><div><small>{selected.id}</small><h2>{selected.title}</h2></div></div><p>{selected.description}</p><div className="detail-progress"><span>전체 진행률 <b>{selected.progress}%</b></span><i><b style={{ width: `${selected.progress}%` }} /></i></div><dl><div><dt>상태</dt><dd><StatusBadge status={selected.status} /></dd></div><div><dt>카테고리</dt><dd>{selected.category}</dd></div><div><dt>담당자</dt><dd>{selected.owner}</dd></div><div><dt>최근 수정</dt><dd>{selected.updated}</dd></div></dl><div className="tags"><span>태그</span><div>{selected.tags.map((tag) => <b key={tag}>#{tag}</b>)}</div></div><button className="primary-action">보고서 열기 <span>↗</span></button></aside>
+  </section>;
 }
 
-function DashboardScreen({ serverStatus }: { serverStatus: 'ok' | 'degraded' | 'unavailable' }) {
-  const preciseAnalysis = serverStatus === 'ok';
-  return <div className="screen app-screen"><div className="app-title"><h3>보안 대시보드</h3><button>이번 주⌄</button></div><div className="safe-card"><span className="safe-icon"><Icon name="check" /></span><div><strong>{preciseAnalysis ? <>오늘 안전 상태: <em>안전</em></> : '기본 검사 모드'}</strong><small>{preciseAnalysis ? '엣지 AI 정밀 분석이 연결되어 있어요' : '서버 연결 전까지 단말 기본 검사를 사용해요'}</small></div><span>›</span></div><div className="analysis-card"><span>오늘 분석 <strong>24건</strong></span><ul><li className="warn">△ <span>주의</span><b>2건</b></li><li className="danger">△ <span>경고/차단</span><b>1건</b></li><li>♙ <span>보호자 알림</span><b>0건</b></li></ul></div><div className="activity-card"><strong>최근 활동</strong><ul><li><time>14:30</time><span>안전한 입력 감지</span></li><li><time>13:21</time><span>주의: 금융정보 입력</span></li><li><time>11:05</time><span>안전한 입력 감지</span></li></ul></div><PhoneNav active="home" /></div>;
-}
+function DataMap() { return <section className="data-layout"><article className="panel endpoint-panel"><PanelHead label="ENDPOINTS" title="API 연결 지점" /><div className="endpoint-list">{endpoints.map((endpoint) => <div key={`${endpoint.method}-${endpoint.path}`}><b>{endpoint.method}</b><code>{endpoint.path}</code><span>{endpoint.description}</span><i className={endpoint.state.toLowerCase()}>{endpoint.state}</i></div>)}</div></article><article className="panel schema-panel"><PanelHead label="RESPONSE MODEL" title="위험 분석 응답 계약" /><pre><span>{'{'}</span>{'\n  '}<b>"risk_level"</b>: <em>"safe | caution | danger"</em>,{'\n  '}<b>"risk_score"</b>: <i>0.82</i>,{'\n  '}<b>"recommended_action"</b>: <em>"block_and_confirm"</em>,{'\n  '}<b>"detected_personal_info"</b>: [],{'\n  '}<b>"detected_fraud_patterns"</b>: [],{'\n  '}<b>"analysis_meta"</b>: {'{'} <b>"analysis_source"</b>: <em>"edge"</em> {'}'}{'\n'}<span>{'}'}</span></pre></article></section> }
 
-function Menu({ icon, title, text }: { icon: 'keyboard' | 'settings' | 'shield' | 'user' | 'help'; title: string; text: string }) {
-  return <button><span className="row-icon"><Icon name={icon} /></span><span><strong>{title}</strong><small>{text}</small></span><b>›</b></button>;
-}
+function ActivityPage() { return <section className="panel timeline-panel"><div className="timeline-date">2026년 7월 21일 <span>오늘</span></div>{activities.map((item) => <Activity key={item.title} {...item} expanded />)}<div className="timeline-date muted">2026년 7월 20일</div>{activities.slice(1).reverse().map((item) => <Activity key={`old-${item.title}`} {...item} time="어제" expanded />)}</section> }
 
-function PhoneNav({ active }: { active: 'home' | 'more' }) {
-  return <nav className="phone-nav"><span className={active === 'home' ? 'active' : ''}>⌂<small>홈</small></span><span>♢<small>보안</small></span><span>♧<small>알림</small></span><span className={active === 'more' ? 'active' : ''}>•••<small>더보기</small></span></nav>;
-}
+function SettingsPage({ theme, setTheme, fontSize, setFontSize }: { theme: Theme; setTheme: (theme: Theme) => void; fontSize: FontSize; setFontSize: (size: FontSize) => void }) { const [options, setOptions] = useState([true, true, false]); const fontOptions: { key: FontSize; label: string; sample: string }[] = [{ key: 'small', label: '작게', sample: '가' }, { key: 'medium', label: '기본', sample: '가' }, { key: 'large', label: '크게', sample: '가' }]; return <section className="settings-grid"><div className="settings-column"><article className="panel theme-panel"><PanelHead label="APPEARANCE" title="화면 테마" /><p>눈에 편한 화면 모드를 선택하세요. 설정은 다음 실행에도 유지됩니다.</p><div className="theme-options"><button className={theme === 'light' ? 'selected' : ''} onClick={() => setTheme('light')}><span className="theme-preview light-preview"><i /><b /><b /></span><span><strong>화이트 모드</strong><small>밝고 선명한 기본 화면</small></span><i className="radio" /></button><button className={theme === 'dark' ? 'selected' : ''} onClick={() => setTheme('dark')}><span className="theme-preview dark-preview"><i /><b /><b /></span><span><strong>다크 모드</strong><small>빛이 적은 편안한 화면</small></span><i className="radio" /></button></div></article><article className="panel font-panel"><PanelHead label="READABILITY" title="글자 크기" /><p>화면에서 가장 편하게 읽히는 크기를 선택하세요.</p><div className="font-options">{fontOptions.map((option) => <button key={option.key} className={fontSize === option.key ? `selected ${option.key}` : option.key} onClick={() => setFontSize(option.key)}><b>{option.sample}</b><span>{option.label}</span><i /></button>)}</div><div className="font-sample"><span>미리보기</span><strong>프로젝트의 중요한 변화를 한눈에 확인하세요.</strong></div></article><article className="panel setting-panel"><PanelHead label="GENERAL" title="일반 설정" />{['Mock data mode', 'Responsive layout', '상태 변경 알림'].map((label, index) => <button key={label} onClick={() => setOptions(options.map((value, i) => i === index ? !value : value))}><span><strong>{label}</strong><small>{index === 0 ? '샘플 데이터로 화면을 구성합니다.' : index === 1 ? '화면 크기에 맞춰 레이아웃을 조정합니다.' : '보고서 상태가 바뀌면 알려드립니다.'}</small></span><i className={options[index] ? 'on' : ''} /></button>)}</article></div><article className="panel environment-card"><PanelHead label="ENVIRONMENT" title="연동 환경" /><dl><div><dt>Theme</dt><dd>{theme === 'light' ? 'White' : 'Dark'}</dd></div><div><dt>Font size</dt><dd>{fontSize === 'small' ? 'Small' : fontSize === 'large' ? 'Large' : 'Default'}</dd></div><div><dt>Mode</dt><dd>Development</dd></div><div><dt>API Version</dt><dd>v1 draft</dd></div><div><dt>Last sync</dt><dd>아직 연결되지 않음</dd></div><div><dt>Contract</dt><dd className="success-text">Ready</dd></div></dl><button className="outline-action">연동 설정 확인</button></article></section> }
 
-function Value({ icon, title, text }: { icon: 'settings' | 'keyboard' | 'access'; title: string; text: string }) {
-  return <article><span className="value-icon"><Icon name={icon} /></span><div><h3>{title}</h3><p>{text}</p></div></article>;
-}
+function PanelHead({ label, title, action, onAction }: { label: string; title: string; action?: string; onAction?: () => void }) { return <header className="panel-head"><div><span>{label}</span><h2>{title}</h2></div>{action && <button onClick={onAction}>{action} <b>→</b></button>}</header> }
+function StatusBadge({ status }: { status: ReportStatus }) { return <span className={`status-badge ${status === '완료' ? 'complete' : status === '검토 중' ? 'review' : 'draft'}`}><i />{status}</span> }
+function Activity({ icon, tone, title, detail, time, expanded = false }: { icon: string; tone: string; title: string; detail: string; time: string; expanded?: boolean }) { return <div className={`activity ${expanded ? 'expanded' : ''}`}><i className={tone}>{icon}</i><div><strong>{title}</strong><span>{detail}</span></div><time>{time}</time></div> }
 
 export default App;
