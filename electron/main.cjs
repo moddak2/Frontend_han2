@@ -1,8 +1,22 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, desktopCapturer, ipcMain } = require('electron');
 const path = require('path');
 
 const isDev = !app.isPackaged;
 const devServerUrl = 'http://localhost:5173';
+
+ipcMain.handle('screen:get-sources', async () => {
+  const sources = await desktopCapturer.getSources({
+    types: ['screen', 'window'],
+    thumbnailSize: { width: 320, height: 180 },
+    fetchWindowIcons: true,
+  });
+
+  return sources.map((source) => ({
+    id: source.id,
+    name: source.name,
+    thumbnail: source.thumbnail.toDataURL(),
+  }));
+});
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -22,7 +36,9 @@ function createWindow() {
 
   if (isDev) {
     win.loadURL(devServerUrl);
-    win.webContents.openDevTools({ mode: 'detach' });
+    if (process.env.HAN2_OPEN_DEVTOOLS === '1') {
+      win.webContents.openDevTools({ mode: 'detach' });
+    }
     return;
   }
 

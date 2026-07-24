@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite",
     "dev:renderer": "vite",
-    "dev:electron": "wait-on tcp:5173 && electron .",
+    "dev:electron": "wait-on tcp:5173 && node electron/launch.cjs",
     "desktop": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\"",
     "build": "tsc -b && vite build",
     "dist": "npm run build && electron-builder",
